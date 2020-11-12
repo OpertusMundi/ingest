@@ -9,6 +9,8 @@ from uuid import uuid4
 from hashlib import md5
 from datetime import datetime, timezone
 from flask_executor import Executor
+from apispec import APISpec
+from apispec_webframeworks.flask import FlaskPlugin
 import zipfile
 import tarfile
 import json
@@ -79,6 +81,18 @@ for variable in [
     if env[variable] is None:
         raise Exception('Environment variable {} is not set.'.format(variable))
 
+spec = APISpec(
+    title="Ingest/Publish API",
+    version="0.0.1",
+    info=dict(
+        description="A simple service to ingest a KML or ShapeFile into a PostGIS capable PostgreSQL database and publish an associated layer to GeoServer.",
+        contact={"email": "pmitropoulos@getmap.gr"}
+    ),
+    externalDocs={"description": "GitHub", "url": "https://github.com/OpertusMundi/ingest"},
+    openapi_version="3.0.2",
+    plugins=[FlaskPlugin()],
+)
+
 app = Flask(__name__, instance_relative_config=True)
 app.config.from_mapping(
     SECRET_KEY='dev',
@@ -114,22 +128,86 @@ def enqueue(src_file, ticket, env):
 @app.route("/")
 def index():
     """The index route, gives info about the API endpoints."""
-    ingest_params = {"response": "<prompt|deferred>"}
-    get = {
-        "/ingest": {"params": {**ingest_params, "src": "<source file path>"}, "response": "json"},
-        "/status/<ticket>": {"response": "json"},
-        "/endpoints/<ticket>": {"response": "json"}
-    }
-    post = {"/ingest": {"params": ingest_params, "response": "json"}}
-    response = make_response({"GET": get, "POST": post}, 200)
-    return response
+    return make_response(spec.to_dict(), 200)
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
     """The ingest endpoint.
-    It expects the following HTTP form parameters:
-        -resource (required): A resovable path of source file or the source file itself.
-        -response: prompt (default) or deferred.
+    ---
+    post:
+      summary: Ingest a vector file (Shapefile/KML) into PostGIS and publish the layer to GeoServer.
+      tags:
+        - Ingest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resource:
+                  type: string
+                  format: binary
+                  description: The vector file.
+                response:
+                  type: string
+                  enum: [prompt, deferred]
+                  default: prompt
+                  description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+              required:
+                - resource
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                resource:
+                  type: string
+                  description: The vector file resolvable path.
+                response:
+                  type: string
+                  enum: [prompt, deferred]
+                  default: prompt
+                  description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+              required:
+                - resource
+      responses:
+        200:
+          description: Ingestion / publication completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  WMS:
+                    type: string
+                    description: WMS endpoint
+                  WFS:
+                    type: string
+                    description: WFS endpoint
+        202:
+          description: Accepted for processing, but ingestion/publish has not been completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket:
+                    type: string
+                    description: The ticket corresponding to the request.
+                  status:
+                    type: string
+                    description: The *status* endpoint to poll for the status of the request.
+                  endpoints:
+                    type: string
+                    description: The WMS/WFS endpoints to get the resulting resource when ready.
+          links:
+            GetStatus:
+              operationId: getStatus
+              parameters:
+                ticket: '$response.body#/ticket'
+              description: The `ticket` value returned in the response can be used as the `ticket` parameter in `GET /status/{ticket}`.
+        400:
+          description: Client error.
     """
 
     # Create a unique ticket for the request
@@ -164,11 +242,52 @@ def ingest():
         return make_response(result, 200)
     else:
         enqueue.submit(src_file, ticket, env)
-        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "endpoints": "/endpoints/{}".format(ticket)}, 200)
+        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "endpoints": "/endpoints/{}".format(ticket)}, 202)
 
 @app.route("/status/<ticket>")
 def status(ticket):
-    """Get the status of a specific ticket."""
+    """Get the status of a specific ticket.
+    ---
+    get:
+      summary: Get the status of a request.
+      operationId: getStatus
+      description: Returns the status of a request corresponding to a specific ticket.
+      tags:
+        - Status
+      parameters:
+        - name: ticket
+          in: path
+          description: The ticket of the request
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Ticket found and status returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  completed:
+                    type: boolean
+                    description: Whether ingestion/publication process has been completed or not.
+                  success:
+                    type: boolean
+                    description: Whether the process completed succesfully.
+                  comment:
+                    type: string
+                    description: If ingestion/publication has failed, a short comment describing the reason.
+                  requested:
+                    type: string
+                    format: datetime
+                    description: The timestamp of the request.
+                  execution_time(s):
+                    type: integer
+                    description: The execution time in seconds.
+        404:
+          description: Ticket not found.
+    """
     if ticket is None:
         return make_response('Ticket is missing.', 400)
     dbc = db.get_db()
@@ -183,7 +302,37 @@ def status(ticket):
 
 @app.route("/endpoints/<ticket>")
 def endpoints(ticket):
-    """Get the resulted endpoints associated with a specific ticket."""
+    """Get the resulted endpoints associated with a specific ticket.
+    ---
+    get:
+      summary: Get the result of a request.
+      description: Returns the WMS/WFS endpoints resulted from a ingestion/publication request corresponding to a specific ticket.
+      tags:
+        - Endpoints
+      parameters:
+        - name: ticket
+          in: path
+          description: The ticket of the request
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: The resulted endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  WMS:
+                    type: string
+                    description: WMS endpoint
+                  WFS:
+                    type: string
+                    description: WFS endpoint
+        404:
+          description: Ticket not found or transform has not been completed.
+    """
     if ticket is None:
         return make_response('Resource ticket is missing.', 400)
     dbc = db.get_db()
@@ -191,3 +340,8 @@ def endpoints(ticket):
     if result is None:
         return make_response('Not found.', 404)
     return make_response(json.loads(result), 200)
+
+with app.test_request_context():
+    spec.path(view=ingest)
+    spec.path(view=status)
+    spec.path(view=endpoints)

@@ -18,6 +18,8 @@ setuptools.setup(
         'shapely>=1.7.0,<1.7.1',
         'pycurl>=7.43.0.6,<7.43.1',
         'flask-cors>=3.0.9,<3.1.0',
+        'apispec>=4.0.0,<4.1.0',
+        'apispec-webframeworks>=0.5.2,<0.5.3',
     ],
     python_requires='>=3.7',
     zip_safe=False,
