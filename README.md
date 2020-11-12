@@ -31,6 +31,7 @@ The following environment variables should be set:
 - **GS_USER**: GeoServer user name.
 - **GS_PASS** GeoServer user password.
 - (optional) **TEMPDIR**: The location for storing temporary files. If not set, the system temporary path location will be used.
+- (optional) **CORS**: List or string of allowed origins. Default: \*.
 
 A development server could be started with:
 ```

@@ -17,6 +17,7 @@ setuptools.setup(
         'psycopg2-binary>=2.8.5,<2.8.6',
         'shapely>=1.7.0,<1.7.1',
         'pycurl>=7.43.0.6,<7.43.1',
+        'flask-cors>=3.0.9,<3.1.0',
     ],
     python_requires='>=3.7',
     zip_safe=False,
