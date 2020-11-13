@@ -31,7 +31,7 @@ def executorCallback(future):
     with app.app_context():
         dbc = db.get_db()
         time = dbc.execute('SELECT requested_time FROM tickets WHERE ticket = ?;', [ticket]).fetchone()['requested_time']
-        execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds())
+        execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds(),3)
         dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=? WHERE ticket=?;', [result, success, execution_time, comment, ticket])
         dbc.commit()
 

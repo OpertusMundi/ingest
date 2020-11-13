@@ -5,7 +5,7 @@ CREATE TABLE tickets (
   ticket TEXT NOT NULL,
   status INTEGER DEFAULT 0,
   success INTEGER,
-  execution_time INTEGER,
+  execution_time REAL,
   requested_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   result text,
   comment text
