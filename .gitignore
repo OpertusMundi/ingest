@@ -3,3 +3,5 @@ instance/
 Dockerfile
 set_env_vars.sh
 wsgi.py
+accounting.log
+*.pyc

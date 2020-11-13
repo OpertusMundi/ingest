@@ -21,6 +21,7 @@ setuptools.setup(
         'apispec>=4.0.0,<4.1.0',
         'apispec-webframeworks>=0.5.2,<0.5.3',
     ],
+    package_data={'ingest': ['logging.conf']},
     python_requires='>=3.7',
     zip_safe=False,
 )

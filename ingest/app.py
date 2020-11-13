@@ -17,6 +17,7 @@ import json
 from . import db
 from .postgres import Postgres
 from .geoserver import Geoserver
+from .logging import getLoggers
 
 def mkdir(path):
     """Creates recursively the path, ignoring warnings for existing directories."""
@@ -27,13 +28,14 @@ def mkdir(path):
 
 def executorCallback(future):
     """The callback function called when a job has succesfully completed."""
-    ticket, result, success, comment = future.result()
+    ticket, result, success, comment, rows = future.result()
     with app.app_context():
         dbc = db.get_db()
         time = dbc.execute('SELECT requested_time FROM tickets WHERE ticket = ?;', [ticket]).fetchone()['requested_time']
         execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds(),3)
         dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=? WHERE ticket=?;', [result, success, execution_time, comment, ticket])
         dbc.commit()
+        accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
 def ingestAndPublish(src_file, ticket, env):
     """Ingest file content to PostgreSQL and publish to geoserver.
@@ -59,17 +61,17 @@ def ingestAndPublish(src_file, ticket, env):
         src_file = src_path
     try:
         postgres = Postgres(user=env['DB_USER'], password=env['DB_PASS'], db=env['DB_NAME'], schema=env['DB_SCHEMA'], host=env['DB_HOST'], port=env['DB_PORT'])
-        postgres.ingest(src_file, ticket)
+        rows = postgres.ingest(src_file, ticket)
         geoserver = Geoserver(env['GS_URL'], username=env['GS_USER'], password=env['GS_PASS'])
         geoserver.createWorkspace(env['GS_WORKSPACE'])
         geoserver.createStore(name=env['GS_STORE'], pg_db=env['DB_NAME'], pg_user=env['DB_USER'], pg_password=env['DB_PASS'], workspace=env['GS_WORKSPACE'], pg_host=env['DB_HOST'], pg_port=env['DB_PORT'], pg_schema=env['DB_SCHEMA'])
         geoserver.publish(store=env['GS_STORE'], table=ticket, workspace=env['GS_WORKSPACE'])
     except Exception as e:
         raise Exception(e)
-    return {
+    return ({
         "WMS": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(env['GS_WORKSPACE'], ticket),
         "WFS": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(env['GS_WORKSPACE'], ticket)
-    }
+    }, rows)
 
 # Read (required) environment parameters
 env = {}
@@ -81,6 +83,10 @@ for variable in [
     if env[variable] is None:
         raise Exception('Environment variable {} is not set.'.format(variable))
 
+#Logging
+mainLogger, accountLogger = getLoggers()
+
+# OpenAPI documentation
 spec = APISpec(
     title="Ingest/Publish API",
     version="0.0.1",
@@ -93,6 +99,7 @@ spec = APISpec(
     plugins=[FlaskPlugin()],
 )
 
+# Initialize app
 app = Flask(__name__, instance_relative_config=True)
 app.config.from_mapping(
     SECRET_KEY='dev',
@@ -120,10 +127,10 @@ def enqueue(src_file, ticket, env):
     dbc.execute('INSERT INTO tickets (ticket) VALUES(?);', [ticket])
     dbc.commit()
     try:
-        result = ingestAndPublish(src_file, ticket, env)
+        endpoints, rows = ingestAndPublish(src_file, ticket, env)
     except Exception as e:
-        return (ticket, None, 0, str(e))
-    return (ticket, json.dumps(result), 1, None)
+        return (ticket, None, 0, str(e), None)
+    return (ticket, json.dumps(endpoints), 1, None, rows)
 
 @app.route("/")
 def index():
@@ -217,6 +224,7 @@ def ingest():
     # Get the type of the response
     response = request.values.get('response') or 'prompt'
     if response != 'prompt' and response != 'deferred':
+        mainLogger.info('Client error: %s', "Wrong value for parameter 'response'")
         return make_response("Parameter 'response' can take one of: 'prompt', 'deferred'", 400)
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -224,6 +232,7 @@ def ingest():
     else:
         resource = request.files['resource']
         if resource is None:
+            mainLogger.info('Client error: %s', 'Resource not uploaded')
             return make_response({"Error": "Resource not uploaded."}, 400)
 
         # Create tmp directory and store the uploaded file.
@@ -235,11 +244,16 @@ def ingest():
         resource.save(src_file)
 
     if response == 'prompt':
+        start_time = datetime.now()
         try:
-            result = ingestAndPublish(src_file, ticket, env)
+            endpoints, rows = ingestAndPublish(src_file, ticket, env)
         except Exception as e:
+            execution_time = round((datetime.now() - start_time).total_seconds(), 3)
+            accountLogger(ticket=ticket, success=False, execution_start=start_time, execution_time=execution_time, comment=str(e))
             return make_response(str(e), 500)
-        return make_response(result, 200)
+        execution_time = round((datetime.now() - start_time).total_seconds(), 3)
+        accountLogger(ticket=ticket, success=True, execution_start=start_time, execution_time=execution_time, rows=rows)
+        return make_response(endpoints, 200)
     else:
         enqueue.submit(src_file, ticket, env)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "endpoints": "/endpoints/{}".format(ticket)}, 202)

@@ -36,11 +36,14 @@ class Postgres(object):
             gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'r'
         eof = False
         i = 0
+        rows = 0
         while eof == False:
             df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
-            if len(df) == 0:
+            length = len(df)
+            if length == 0:
                 eof = True
                 continue
+            rows = rows + length
             srid = df.crs.to_epsg()
             if extension == '.kml':
                 df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y, z: (x, y), polygon))
@@ -67,6 +70,8 @@ class Postgres(object):
                         con.execute('CREATE UNIQUE INDEX ON {0}."{1}" ("{2}")'.format(schema, table, index))
                 except Exception as e:
                     pass
+
+        return rows
 
     def _findIndex(self, df):
         """Identifies unique fields in the dataframe"""
