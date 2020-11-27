@@ -2,7 +2,7 @@ from flask import Flask
 from flask import request, current_app, make_response
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
-from os import path, getenv, makedirs, unlink
+from os import path, getenv, environ, makedirs, unlink
 from shutil import move
 import tempfile
 from uuid import uuid4
@@ -14,10 +14,13 @@ from apispec_webframeworks.flask import FlaskPlugin
 import zipfile
 import tarfile
 import json
+import sqlalchemy
 from . import db
 from .postgres import Postgres
 from .geoserver import Geoserver
 from .logging import getLoggers
+
+mainLogger, accountLogger = getLoggers()
 
 def _makeDir(path):
     """Creates recursively the path, ignoring warnings for existing directories."""
@@ -29,6 +32,17 @@ def _makeDir(path):
 def _getTempDir():
     """Return the temporary directory"""
     return getenv('TEMPDIR') or tempfile.gettempdir()
+
+def _checkDirectoryWritable(d):
+    fd, fname = tempfile.mkstemp(None, None, d)
+    unlink(fname);
+
+def _checkConnectToPostgis():
+    url = 'postgresql://%(POSTGIS_USER)s:%(POSTGIS_PASS)s@%(POSTGIS_HOST)s:%(POSTGIS_PORT)s/%(POSTGIS_DB_NAME)s' % environ
+    engine = sqlalchemy.create_engine(url)
+    conn = engine.connect()
+    conn.execute('SELECT 1')
+    mainLogger.debug('_checkConnectToPostgis(): Connected to %s' % (engine.url))
 
 def _executorCallback(future):
     """The callback function called when a job has succesfully completed."""
@@ -87,8 +101,6 @@ for variable in [
     if env[variable] is None:
         raise Exception('Environment variable {} is not set.'.format(variable))
 
-#Logging
-mainLogger, accountLogger = getLoggers()
 
 # OpenAPI documentation
 spec = APISpec(
@@ -173,26 +185,17 @@ def health_check():
     """
     mainLogger.info('Performing health checks...')
     # Check that temp directory is writable
-    tempdir = _getTempDir();
-    fname = None
-    try:
-        fd, fname = tempfile.mkstemp(dir=tempdir)
-    except Exception as e:
-        return make_response({
-            'status': 'FAILED', 'reason': 'temp directory not writable', 'details': str(e)}, 200); 
-    else:
-        unlink(fname);
-    # Check that we can connect to our PostGIS backend
     try: 
-        pg = Postgres(
-            user=getenv('POSTGIS_USER'), password=getenv('POSTGIS_PASS'), 
-            db=getenv('POSTGIS_DB_NAME'), schema=getenv('POSTGIS_DB_SCHEMA'), 
-            host=getenv('POSTGIS_HOST'), port=getenv('POSTGIS_PORT'))
-    except Exception as e:
-        return make_response({
-            'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'details': str(e)}, 200); 
-    # Todo Check that we can connect to our Geoserver backend
-    # ...
+        _checkDirectoryWritable(_getTempDir())
+    except Exception as exc:
+        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'details': str(exc)}, 200); 
+    # Check that we can connect to our PostGIS backend
+    try:
+        _checkConnectToPostgis()
+    except Exception as exc:
+        return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'details': str(exc)}, 200);
+    # Check that we can connect to our Geoserver backend
+    # Todo ...
     return make_response({'status': 'OK'}, 200)
 
 @app.route("/ingest", methods=["POST"])
