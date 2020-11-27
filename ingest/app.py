@@ -144,7 +144,33 @@ def index():
 
 @app.route("/_health")
 def health_check():
-    """Perform some basic health checks"""
+    """Perform basic health checks
+    ---
+    get:
+      tags:
+      - Health
+      summary: Get health status
+      description: 'Get health status'
+      operationId: 'getHealth'
+      responses:
+        default:
+          description: An object with status information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: A status of 'OK' or 'FAILED'
+                  reason:
+                    type: string
+                    description: the reason of failure (if failed)
+              examples:
+                example-1:
+                  value: |-
+                    {"status": "OK"}
+    """
     mainLogger.info('Performing health checks...')
     # Check that temp directory is writable
     tempdir = _getTempDir();
@@ -391,3 +417,4 @@ with app.test_request_context():
     spec.path(view=ingest)
     spec.path(view=status)
     spec.path(view=endpoints)
+    spec.path(view=health_check)
