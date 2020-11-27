@@ -2,26 +2,18 @@ import setuptools
 
 setuptools.setup(
     name='ingest',
-    version='0.1',
-    description='Ingest shp/kml into postgis/geoserver microservice',
+    version='0.1.0',
+    description='Ingest SHP/KML into postgis/geoserver',
     author='Pantelis Mitropoulos',
     author_email='pmitropoulos@getmap.gr',
     license='MIT',
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(exclude=('tests*',)),
     install_requires=[
-        'geopandas>=0.8.1,<0.8.2',
-        'Flask>=1.1.2,<1.1.3',
-        'flask-executor>=0.9.3,<0.9.4',
-        'sqlalchemy>=1.3.19,<1.4',
-        'geoalchemy2>=0.8.4,<0.8.5',
-        'psycopg2-binary>=2.8.5,<2.8.6',
-        'shapely>=1.7.0,<1.7.1',
-        'pycurl>=7.43.0.6,<7.43.1',
-        'flask-cors>=3.0.9,<3.1.0',
-        'apispec>=4.0.0,<4.1.0',
-        'apispec-webframeworks>=0.5.2,<0.5.3',
+        # moved to requirements.txt
     ],
-    package_data={'ingest': ['logging.conf']},
+    package_data={'ingest': [
+        'logging.conf', 'schema.sql'
+    ]},
     python_requires='>=3.7',
     zip_safe=False,
 )

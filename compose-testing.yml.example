@@ -1,0 +1,48 @@
+# vim: set syntax=yaml:
+
+version: '3.6'
+
+services:
+
+  # note: this is not actually a service, we intend to run it only `docker-compose run`
+  nosetests:
+
+    image: "opertusmundi/ingest:${VERSION}-testing"
+    build:
+      context: .
+      dockerfile: testing.dockerfile
+      args:
+        VERSION: "${VERSION}"
+    
+    entrypoint: ['nosetests']
+    command: ['--verbosity=2']
+    
+    volumes:
+    - type: 'bind'
+      source: .
+      target: '/work'
+    
+    working_dir: /work
+    user: "1000:1000"
+    
+    networks:
+    - 'opertusmundi_network'  
+    
+    environment:
+      DATABASE: './data/ingest-tests.sqlite'
+      POSTGIS_HOST: 'postgres-1-opertusmundi'
+      POSTGIS_PORT: '5432'
+      POSTGIS_USER: 'ingest'
+      POSTGIS_DB_NAME: 'geodata-tests'
+      POSTGIS_DB_SCHEMA: 'public'
+      POSTGIS_PASS: 'secret'
+      GEOSERVER_URL: 'https://geoserver-1-opertusmundi'
+      GEOSERVER_USER: 'ingest'
+      GEOSERVER_WORKSPACE: 'default'
+      GEOSERVER_STORE: 'postgres-1'
+      GEOSERVER_PASS: 'secret'
+ 
+networks:
+  opertusmundi_network: 
+    external: true
+

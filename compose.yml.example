@@ -1,0 +1,64 @@
+# vim: set syntax=yaml:
+
+version: '3.6'
+
+services:
+
+  ingest:
+    
+    image: "opertusmundi/ingest:${VERSION}"
+    build:
+      context: .
+      args:
+        VERSION: "${VERSION}"
+
+    volumes:
+    - type: 'bind'
+      source: './logs'
+      target: '/var/local/ingest/logs'
+    - type: 'bind'
+      source: './secrets/secret_key'
+      target: '/secrets/secret_key'
+      read_only: true
+    - type: 'bind'
+      source: './secrets/postgres-password'
+      target: '/secrets/postgres-password'
+      read_only: true
+    - type: 'bind'
+      source: './secrets/geoserver-password'
+      target: '/secrets/geoserver-password'
+      read_only: true
+    - type: 'bind'
+      source: './data/ingest.sqlite'
+      target: '/var/local/ingest/ingest.sqlite'
+    - type: 'bind'
+      source: './temp'
+      target: '/tmp'
+       
+    networks:
+    - 'opertusmundi_network'  
+
+    ports:
+    - '5000:5000'
+
+    environment:
+      FLASK_ENV: "${FLASK_ENV}"
+      FLASK_DEBUG: "${FLASK_DEBUG}"
+      CORS: '*'
+      SECRET_KEY_FILE: '/secrets/secret_key'
+      POSTGIS_HOST: 'postgres-1-opertusmundi'
+      POSTGIS_PORT: '5432'
+      POSTGIS_USER: 'ingest'
+      POSTGIS_DB_NAME: 'geodata'
+      POSTGIS_DB_SCHEMA: 'public'
+      POSTGIS_PASS_FILE: '/secrets/postgres-password'
+      GEOSERVER_URL: 'https://geoserver-1-opertusmundi'
+      GEOSERVER_USER: 'ingest'
+      GEOSERVER_WORKSPACE: 'default'
+      GEOSERVER_STORE: 'postgres-1'
+      GEOSERVER_PASS_FILE: '/secrets/geoserver-password'
+
+networks:
+  opertusmundi_network: 
+    external: true
+

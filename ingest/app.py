@@ -2,9 +2,9 @@ from flask import Flask
 from flask import request, current_app, make_response
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
-from os import path, getenv, makedirs
+from os import path, getenv, makedirs, unlink
 from shutil import move
-from tempfile import gettempdir
+import tempfile
 from uuid import uuid4
 from hashlib import md5
 from datetime import datetime, timezone
@@ -19,14 +19,18 @@ from .postgres import Postgres
 from .geoserver import Geoserver
 from .logging import getLoggers
 
-def mkdir(path):
+def _makeDir(path):
     """Creates recursively the path, ignoring warnings for existing directories."""
     try:
         makedirs(path)
     except OSError:
         pass
 
-def executorCallback(future):
+def _getTempDir():
+    """Return the temporary directory"""
+    return getenv('TEMPDIR') or tempfile.gettempdir()
+
+def _executorCallback(future):
     """The callback function called when a job has succesfully completed."""
     ticket, result, success, comment, rows = future.result()
     with app.app_context():
@@ -37,7 +41,7 @@ def executorCallback(future):
         dbc.commit()
         accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
-def ingestAndPublish(src_file, ticket, env):
+def _ingestAndPublish(src_file, ticket, env):
     """Ingest file content to PostgreSQL and publish to geoserver.
     Parameters:
         src_file (string): Full path to source file.
@@ -60,24 +64,24 @@ def ingestAndPublish(src_file, ticket, env):
             handle.extractall(src_path)
         src_file = src_path
     try:
-        postgres = Postgres(user=env['DB_USER'], password=env['DB_PASS'], db=env['DB_NAME'], schema=env['DB_SCHEMA'], host=env['DB_HOST'], port=env['DB_PORT'])
+        postgres = Postgres(user=env['POSTGIS_USER'], password=env['POSTGIS_PASS'], db=env['POSTGIS_DB_NAME'], schema=env['POSTGIS_DB_SCHEMA'], host=env['POSTGIS_HOST'], port=env['POSTGIS_PORT'])
         rows = postgres.ingest(src_file, ticket)
-        geoserver = Geoserver(env['GS_URL'], username=env['GS_USER'], password=env['GS_PASS'])
-        geoserver.createWorkspace(env['GS_WORKSPACE'])
-        geoserver.createStore(name=env['GS_STORE'], pg_db=env['DB_NAME'], pg_user=env['DB_USER'], pg_password=env['DB_PASS'], workspace=env['GS_WORKSPACE'], pg_host=env['DB_HOST'], pg_port=env['DB_PORT'], pg_schema=env['DB_SCHEMA'])
-        geoserver.publish(store=env['GS_STORE'], table=ticket, workspace=env['GS_WORKSPACE'])
+        geoserver = Geoserver(env['GEOSERVER_URL'], username=env['GEOSERVER_USER'], password=env['GEOSERVER_PASS'])
+        geoserver.createWorkspace(env['GEOSERVER_WORKSPACE'])
+        geoserver.createStore(name=env['GEOSERVER_STORE'], pg_db=env['POSTGIS_DB_NAME'], pg_user=env['POSTGIS_USER'], pg_password=env['POSTGIS_PASS'], workspace=env['GEOSERVER_WORKSPACE'], pg_host=env['POSTGIS_HOST'], pg_port=env['POSTGIS_PORT'], pg_schema=env['POSTGIS_DB_SCHEMA'])
+        geoserver.publish(store=env['GEOSERVER_STORE'], table=ticket, workspace=env['GEOSERVER_WORKSPACE'])
     except Exception as e:
         raise Exception(e)
     return ({
-        "WMS": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(env['GS_WORKSPACE'], ticket),
-        "WFS": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(env['GS_WORKSPACE'], ticket)
+        "WMS": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(env['GEOSERVER_WORKSPACE'], ticket),
+        "WFS": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(env['GEOSERVER_WORKSPACE'], ticket)
     }, rows)
 
 # Read (required) environment parameters
 env = {}
 for variable in [
-    'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_PORT', 'DB_NAME', 'DB_SCHEMA',
-    'GS_URL', 'GS_USER', 'GS_PASS', 'GS_WORKSPACE', 'GS_STORE'
+    'POSTGIS_HOST', 'POSTGIS_USER', 'POSTGIS_PASS', 'POSTGIS_PORT', 'POSTGIS_DB_NAME', 'POSTGIS_DB_SCHEMA',
+    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_WORKSPACE', 'GEOSERVER_STORE'
 ]:
     env[variable] = getenv(variable)
     if env[variable] is None:
@@ -89,7 +93,7 @@ mainLogger, accountLogger = getLoggers()
 # OpenAPI documentation
 spec = APISpec(
     title="Ingest/Publish API",
-    version="0.0.1",
+    version=getenv('VERSION'),
     info=dict(
         description="A simple service to ingest a KML or ShapeFile into a PostGIS capable PostgreSQL database and publish an associated layer to GeoServer.",
         contact={"email": "pmitropoulos@getmap.gr"}
@@ -102,15 +106,15 @@ spec = APISpec(
 # Initialize app
 app = Flask(__name__, instance_relative_config=True)
 app.config.from_mapping(
-    SECRET_KEY='dev',
-    DATABASE=path.join(app.instance_path, 'ingest.sqlite'),
+    SECRET_KEY=getenv('SECRET_KEY'),
+    DATABASE=getenv('DATABASE'),
 )
 
 # Ensure the instance folder exists and initialize application, db and executor.
-mkdir(app.instance_path)
+_makeDir(app.instance_path)
 db.init_app(app)
 executor = Executor(app)
-executor.add_default_done_callback(executorCallback)
+executor.add_default_done_callback(_executorCallback)
 
 #Enable CORS
 if getenv('CORS') is not None:
@@ -127,7 +131,7 @@ def enqueue(src_file, ticket, env):
     dbc.execute('INSERT INTO tickets (ticket) VALUES(?);', [ticket])
     dbc.commit()
     try:
-        endpoints, rows = ingestAndPublish(src_file, ticket, env)
+        endpoints, rows = _ingestAndPublish(src_file, ticket, env)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     return (ticket, json.dumps(endpoints), 1, None, rows)
@@ -135,7 +139,35 @@ def enqueue(src_file, ticket, env):
 @app.route("/")
 def index():
     """The index route, gives info about the API endpoints."""
+    mainLogger.info('Generating the OpenAPI document...')
     return make_response(spec.to_dict(), 200)
+
+@app.route("/_health")
+def health_check():
+    """Perform some basic health checks"""
+    mainLogger.info('Performing health checks...')
+    # Check that temp directory is writable
+    tempdir = _getTempDir();
+    fname = None
+    try:
+        fd, fname = tempfile.mkstemp(dir=tempdir)
+    except Exception as e:
+        return make_response({
+            'status': 'FAILED', 'reason': 'temp directory not writable', 'details': str(e)}, 200); 
+    else:
+        unlink(fname);
+    # Check that we can connect to our PostGIS backend
+    try: 
+        pg = Postgres(
+            user=getenv('POSTGIS_USER'), password=getenv('POSTGIS_PASS'), 
+            db=getenv('POSTGIS_DB_NAME'), schema=getenv('POSTGIS_DB_SCHEMA'), 
+            host=getenv('POSTGIS_HOST'), port=getenv('POSTGIS_PORT'))
+    except Exception as e:
+        return make_response({
+            'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'details': str(e)}, 200); 
+    # Todo Check that we can connect to our Geoserver backend
+    # ...
+    return make_response({'status': 'OK'}, 200)
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
@@ -236,17 +268,17 @@ def ingest():
             return make_response({"Error": "Resource not uploaded."}, 400)
 
         # Create tmp directory and store the uploaded file.
-        tempdir = getenv('TEMPDIR') or gettempdir()
+        tempdir = _getTempDir();
         tempdir = path.join(tempdir, 'ingest')
         src_path = path.join(tempdir, 'src', ticket)
-        mkdir(src_path)
+        _makeDir(src_path)
         src_file = path.join(src_path, secure_filename(resource.filename))
         resource.save(src_file)
 
     if response == 'prompt':
         start_time = datetime.now()
         try:
-            endpoints, rows = ingestAndPublish(src_file, ticket, env)
+            endpoints, rows = _ingestAndPublish(src_file, ticket, env)
         except Exception as e:
             execution_time = round((datetime.now() - start_time).total_seconds(), 3)
             accountLogger(ticket=ticket, success=False, execution_start=start_time, execution_time=execution_time, comment=str(e))

@@ -22,11 +22,6 @@ class ContextFilter(Filter):
 
 def getLoggers():
     """Create default loggers."""
-    if getenv('LOGGING') is None:
-        log_file_path = path.join(path.dirname(path.abspath(__file__)), 'logging.conf')
-        fileConfig(log_file_path)
-    else:
-        fileConfig(getenv('LOGGING'))
     mainLog = getLogger(getenv('FLASK_APP'))
     accountLog = getLogger(getenv('FLASK_APP') + '.accounting')
     accountLog.addFilter(ContextFilter())
