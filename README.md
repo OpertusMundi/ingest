@@ -1,5 +1,7 @@
 # Ingest micro-service
 
+[![Build Status](https://ci.dev-1.opertusmundi.eu:9443/api/badges/OpertusMundi/ingest/status.svg?ref=refs/heads/master)](https://ci.dev-1.opertusmundi.eu:9443/OpertusMundi/ingest)
+
 ## Description
 
 The purpose of this package is to deploy a micro-service which ingests a KML or ShapeFile into a PostGIS capable PostgreSQL database and publish an associated layer to GeoServer.
