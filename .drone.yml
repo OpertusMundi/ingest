@@ -7,20 +7,13 @@ name: default
 environment:
   POSTGRES_HOST: 'postgis-1'
   POSTGRES_PORT: '5432'
-  POSTGRES_PASSWORD:
-    from_secret: postgres_password
   TEST_DATABASE: ingest-tests
   TEST_USERNAME: tester1  
-  TEST_PASSWORD:
-    from_secret: tester_password
-  # FIXME GEOSERVER_URL
+  # Fixme GEOSERVER_URL
   GEOSERVER_URL: 'http://geoserver-1'
   GEOSERVER_USER: 'tester1'
   GEOSERVER_WORKSPACE: 'default'
   GEOSERVER_STORE: 'postgis-1'
-  GEOSERVER_PASS:
-    from_secret: tester_password
-
 
 #
 # Steps
@@ -34,18 +27,20 @@ steps:
     event:
     - push
     - tag
-  environment: {}
+  environment:
+    POSTGRES_PASSWORD:
+      from_secret: postgres_password
   commands:
   # wait for databse server to be up 
   - (t=10; while ! ping -q -4 -c1 $${POSTGRES_HOST}; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
-  - (t=15; while ! nc -z -v $${POSTGRES_PORT} $${POSTGRES_PORT}; do echo '.'; t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  - (t=20; while ! nc -z -v $${POSTGRES_HOST} $${POSTGRES_PORT}; do echo '.'; t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
   # setup client
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
   - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:postgres:$${POSTGRES_PASSWORD}" > ~/.pgpass
   # create user/database for tests
-  - echo "CREATE USER $${TEST_USERNAME} WITH PASSWORD '$${TEST_PASSWORD}'" | psql -U postgres -h $${POSTGRES_HOST}
-  - echo "CREATE DATABASE $${TEST_DATABASE} WITH OWNER $${TEST_USERNAME}" | psql -U postgres -h $${POSTGRES_HOST}
+  - echo "CREATE USER \"$${TEST_USERNAME}\" WITH PASSWORD '$${TEST_PASSWORD}'" | psql -U postgres -h $${POSTGRES_HOST}
+  - echo "CREATE DATABASE \"$${TEST_DATABASE}\" WITH OWNER \"$${TEST_USERNAME}\"" | psql -U postgres -h $${POSTGRES_HOST}
   - echo "CREATE EXTENSION postgis" | psql -U postgres -h $${POSTGRES_HOST} $${TEST_DATABASE}
 
 - name: nosetests
@@ -59,6 +54,10 @@ steps:
     path: /var/run
   environment:
     DOCKER_HOST: unix:///var/run/docker.sock
+    TEST_PASSWORD:
+      from_secret: tester_password
+    GEOSERVER_PASSWORD:
+      from_secret: tester_password
   commands:
   - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
   - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t opertusmundi/ingest:${DRONE_COMMIT}-testing
@@ -81,8 +80,9 @@ services:
 
 - name: postgis-1
   image: postgis/postgis:9.6-2.5-alpine
-  environment: {}
-
+  environment:
+    POSTGRES_PASSWORD:
+      from_secret: postgres_password
 
 #
 # Volumes
