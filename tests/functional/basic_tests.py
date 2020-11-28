@@ -29,6 +29,8 @@ def test_get_health_check():
         res = client.get('/_health', query_string=dict(), headers=dict())
         assert res.status_code == 200
         r = res.get_json();
+        if 'reason' in r:
+            logging.error('The service is unhealthy: %(reason)s (%(details)s)', r)
         logging.debug("From /_health: %s" % (r))
         assert r['status'] == 'OK'
         

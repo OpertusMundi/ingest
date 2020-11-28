@@ -178,6 +178,9 @@ def health_check():
                   reason:
                     type: string
                     description: the reason of failure (if failed)
+                  detail:
+                    type: string
+                    description: more details on this failure (if failed)
               examples:
                 example-1:
                   value: |-
@@ -188,12 +191,12 @@ def health_check():
     try: 
         _checkDirectoryWritable(_getTempDir())
     except Exception as exc:
-        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'details': str(exc)}, 200); 
+        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'detail': str(exc)}, 200); 
     # Check that we can connect to our PostGIS backend
     try:
         _checkConnectToPostgis()
     except Exception as exc:
-        return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'details': str(exc)}, 200);
+        return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'detail': str(exc)}, 200);
     # Check that we can connect to our Geoserver backend
     # Todo ...
     return make_response({'status': 'OK'}, 200)

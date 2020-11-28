@@ -7,13 +7,12 @@ name: default
 environment:
   POSTGRES_HOST: 'postgis-1'
   POSTGRES_PORT: '5432'
-  TEST_DATABASE: ingest-tests
-  TEST_USERNAME: tester1  
-  # Fixme GEOSERVER_URL
+  POSTGRES_TEST_DATABASE: ingest-tests
+  POSTGRES_TEST_USER: tester1
   GEOSERVER_URL: 'http://geoserver-1'
-  GEOSERVER_USER: 'tester1'
   GEOSERVER_WORKSPACE: 'default'
   GEOSERVER_STORE: 'postgis-1'
+  GEOSERVER_TEST_USER: tester1
 
 #
 # Steps
@@ -30,18 +29,23 @@ steps:
   environment:
     POSTGRES_PASSWORD:
       from_secret: postgres_password
+    POSTGRES_TEST_PASSWORD:
+      from_secret: postgres_test_password
   commands:
-  # wait for databse server to be up 
-  - (t=10; while ! ping -q -4 -c1 $${POSTGRES_HOST}; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
-  - (t=20; while ! nc -z -v $${POSTGRES_HOST} $${POSTGRES_PORT}; do echo '.'; t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
-  # setup client
+  # Wait for database server to be ready
+  - export PGHOST=$${POSTGRES_HOST} PGPORT=$${POSTGRES_PORT}
+  - (t=20; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  # Setup client 
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
-  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:postgres:$${POSTGRES_PASSWORD}" > ~/.pgpass
-  # create user/database for tests
-  - echo "CREATE USER \"$${TEST_USERNAME}\" WITH PASSWORD '$${TEST_PASSWORD}'" | psql -U postgres -h $${POSTGRES_HOST}
-  - echo "CREATE DATABASE \"$${TEST_DATABASE}\" WITH OWNER \"$${TEST_USERNAME}\"" | psql -U postgres -h $${POSTGRES_HOST}
-  - echo "CREATE EXTENSION postgis" | psql -U postgres -h $${POSTGRES_HOST} $${TEST_DATABASE}
+  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:postgres:$${POSTGRES_PASSWORD}" >> ~/.pgpass
+  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:$${POSTGRES_TEST_USER}:$${POSTGRES_TEST_PASSWORD}" >> ~/.pgpass
+  # Create user/database for tests
+  - echo "CREATE USER \"$${POSTGRES_TEST_USER}\" WITH PASSWORD '$${POSTGRES_TEST_PASSWORD}'" | psql -U postgres
+  - echo "CREATE DATABASE \"$${POSTGRES_TEST_DATABASE}\" WITH OWNER \"$${POSTGRES_TEST_USER}\"" | psql -U postgres
+  - echo "CREATE EXTENSION postgis" | psql -U postgres $${POSTGRES_TEST_DATABASE}
+  - psql -U postgres -l -A -t
+  - psql -U $${POSTGRES_TEST_USER} -d $${POSTGRES_TEST_DATABASE} -A -t -c '\d'
 
 - name: nosetests
   image: docker:19.03-dind
@@ -54,16 +58,39 @@ steps:
     path: /var/run
   environment:
     DOCKER_HOST: unix:///var/run/docker.sock
-    TEST_PASSWORD:
-      from_secret: tester_password
-    GEOSERVER_PASSWORD:
-      from_secret: tester_password
+    POSTGRES_TEST_PASSWORD:
+      from_secret: postgres_test_password
+    GEOSERVER_TEST_PASSWORD:
+      from_secret: geoserver_test_password
   commands:
+  # Build image for testing
+  - export image=opertusmundi/ingest:${DRONE_COMMIT}-testing
   - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
-  - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t opertusmundi/ingest:${DRONE_COMMIT}-testing
-  # run tests
-  # TODO
-  #- docker run --rm -u 1000:1000 -v $PWD:/work -w /work opertusmundi/ingest:${DRONE_COMMIT}-testing nosetests -v
+  - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t $${image}
+  # Prepare environment for tests
+  - export env_file=nosetests-${CI_BUILD_NUMBER}.env
+  - >-
+    (env -i 
+    DATABASE=./ingest-tests.sqlite
+    POSTGIS_HOST=$${POSTGRES_HOST}
+    POSTGIS_PORT=$${POSTGRES_PORT}
+    POSTGIS_USER=$${POSTGRES_TEST_USER}
+    POSTGIS_PASS=$${POSTGRES_TEST_PASSWORD}
+    POSTGIS_DB_NAME=$${POSTGRES_TEST_DATABASE}
+    POSTGIS_DB_SCHEMA=public
+    GEOSERVER_URL=$${GEOSERVER_URL}
+    GEOSERVER_USER=$${GEOSERVER_TEST_USER}
+    GEOSERVER_PASS=$${GEOSERVER_TEST_PASSWORD}
+    GEOSERVER_WORKSPACE=$${GEOSERVER_WORKSPACE}
+    GEOSERVER_STORE=$${GEOSERVER_STORE}
+    ) | tee $${env_file}
+  # Run tests
+  - export postgres_server_address=$(getent ahostsv4 $${POSTGRES_HOST} | awk '/\<STREAM\>/{print $1}' | head -n 1)
+  - test -n "$${postgres_server_address}"
+  - >-
+    docker run --rm -u 1000:1000 --volume $PWD:/work --workdir /work --env-file $${env_file} 
+    --add-host $${POSTGRES_HOST}:$${postgres_server_address}
+    $${image} nosetests -v -s
 
 #
 # Services
