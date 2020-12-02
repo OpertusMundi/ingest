@@ -49,39 +49,49 @@ class Postgres(object):
         eof = False
         i = 0
         rows = 0
-        while eof == False:
-            df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
-            length = len(df)
-            if length == 0:
-                eof = True
-                continue
-            rows = rows + length
-            srid = df.crs.to_epsg()
-            if extension == '.kml':
-                df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y, z: (x, y), polygon))
-            df['geom'] = df['geometry'].apply(lambda x: WKTElement(x.wkt, srid=srid))
-            if i == 0:
-                gtype = df.geometry.geom_type.unique()
-                if len(gtype) == 1:
-                    gtype = gtype[0]
-                else:
-                    gtype = 'GEOMETRY'
-            df.drop('geometry', 1, inplace=True)
-            i = i + 1
-
-            df.to_sql(table, self.engine, schema=schema, if_exists='append', index=False, dtype={'geom': Geometry(gtype, srid=srid)})
-        indices = self._findIndex(df)
         with self.engine.connect() as con:
-            primary = False
-            for index in indices:
-                try:
-                    if primary == False:
-                        con.execute('ALTER TABLE {0}."{1}" ADD PRIMARY KEY ("{2}")'.format(schema, table, index))
-                        primary = True
+            trans = con.begin()
+            while eof == False:
+                df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
+                length = len(df)
+                if length == 0:
+                    eof = True
+                    continue
+                rows = rows + length
+                srid = df.crs.to_epsg()
+                if extension == '.kml':
+                    df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y: (x, y), polygon))
+                df['geom'] = df['geometry'].apply(lambda x: WKTElement(x.wkt, srid=srid))
+                if i == 0:
+                    indices = self._findIndex(df)
+                    gtype = df.geometry.geom_type.unique()
+                    if len(gtype) == 1:
+                        gtype = gtype[0]
                     else:
-                        con.execute('CREATE UNIQUE INDEX ON {0}."{1}" ("{2}")'.format(schema, table, index))
-                except Exception as e:
-                    pass
+                        gtype = 'GEOMETRY'
+                df.drop('geometry', 1, inplace=True)
+                i += 1
+
+                df.to_sql(table, con=con, schema=schema, if_exists='append', index=False, dtype={'geom': Geometry(gtype, srid=srid)})
+
+            if commit:
+                trans.commit()
+
+                # Try to create unique indices
+                primary = False
+                for index in indices:
+                    try:
+                        if primary == False:
+                            con.execute('ALTER TABLE {0}."{1}" ADD PRIMARY KEY ("{2}")'.format(schema, table, index))
+                            primary = True
+                        else:
+                            con.execute('CREATE UNIQUE INDEX ON {0}."{1}" ("{2}")'.format(schema, table, index))
+                    except Exception as e:
+                        print(str(e))
+                        pass
+            else:
+                trans.rollback()
+            trans.close()
 
         return rows
 
