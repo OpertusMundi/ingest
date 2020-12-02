@@ -34,7 +34,7 @@ steps:
   commands:
   # Wait for database server to be ready
   - export PGHOST=$${POSTGRES_HOST} PGPORT=$${POSTGRES_PORT}
-  - (t=20; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  - (t=30; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
   # Setup client 
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
