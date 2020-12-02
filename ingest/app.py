@@ -14,7 +14,6 @@ from apispec_webframeworks.flask import FlaskPlugin
 import zipfile
 import tarfile
 import json
-import sqlalchemy
 from . import db
 from .postgres import Postgres
 from .geoserver import Geoserver
@@ -38,11 +37,14 @@ def _checkDirectoryWritable(d):
     unlink(fname);
 
 def _checkConnectToPostgis():
-    url = 'postgresql://%(POSTGIS_USER)s:%(POSTGIS_PASS)s@%(POSTGIS_HOST)s:%(POSTGIS_PORT)s/%(POSTGIS_DB_NAME)s' % environ
-    engine = sqlalchemy.create_engine(url)
-    conn = engine.connect()
-    conn.execute('SELECT 1')
-    mainLogger.debug('_checkConnectToPostgis(): Connected to %s' % (engine.url))
+    postgres = Postgres()
+    engine_url = postgres.check()
+    mainLogger.debug('_checkConnectToPostgis(): Connected to %s' % (engine_url))
+
+def _checkConnectToGeoserver():
+    gs = Geoserver()
+    gs_url = gs.check()
+    mainLogger.debug('_checkConnectToGeoserver(): Connected to %s' % (gs_url))
 
 def _executorCallback(future):
     """The callback function called when a job has succesfully completed."""
@@ -198,17 +200,20 @@ def health_check():
     """
     mainLogger.info('Performing health checks...')
     # Check that temp directory is writable
-    try: 
+    try:
         _checkDirectoryWritable(_getTempDir())
     except Exception as exc:
-        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'detail': str(exc)}, 200); 
+        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'detail': str(exc)}, 200);
     # Check that we can connect to our PostGIS backend
     try:
         _checkConnectToPostgis()
     except Exception as exc:
         return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'detail': str(exc)}, 200);
     # Check that we can connect to our Geoserver backend
-    # Todo ...
+    try:
+        _checkConnectToGeoserver()
+    except Exception as exc:
+        return make_response({'status': 'FAILED', 'reason': 'cannot connect to GeoServer REST API.', 'detail': str(exc)}, 200)
     return make_response({'status': 'OK'}, 200)
 
 @app.route("/ingest", methods=["POST"])

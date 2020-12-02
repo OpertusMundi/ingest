@@ -1,4 +1,5 @@
 import pycurl
+import json
 from os import environ
 
 class DataProvider(object):
@@ -47,11 +48,12 @@ class Geoserver(object):
         conn = pycurl.Curl()
         conn.setopt(pycurl.USERPWD, "%s:%s" % (self.username, self.password))
         conn.setopt(conn.URL, "%s/%s" % (self.rest_url, endpoint))
-        conn.perform()
+        response = conn.perform_rs()
         http_code = conn.getinfo(pycurl.HTTP_CODE)
         conn.close()
         if http_code != 200:
-            raise Exception(http_code)
+            raise Exception('GeoServer: %s (%i)' % (response, http_code))
+        return response
 
     def _post(self, endpoint, xml):
         """POST request to GeoServer.
@@ -72,7 +74,20 @@ class Geoserver(object):
         http_code = conn.getinfo(pycurl.HTTP_CODE)
         conn.close()
         if http_code > 299:
-            raise Exception(http_code)
+            raise Exception('GeoServer POST: %s\n%s\nresponse code: %i' % (endpoint, xml, http_code))
+
+    def check(self):
+        """Checks connection to GeoServer REST API.
+        Raises:
+            Exception: In case HTTP code is other than 2** or metrics are not returned.
+        Returns:
+            (string) Rest URL
+        """
+        response = self._get('about/system-status')
+        response = json.loads(response)
+        if not 'metrics' in response.keys():
+            raise Exception('Metrics not found.')
+        return self.rest_url
 
     def createWorkspace(self, workspace):
         """Creates, if it does not exist, a workspace in GeoServer.

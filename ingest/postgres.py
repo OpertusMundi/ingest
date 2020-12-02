@@ -23,6 +23,11 @@ class Postgres(object):
                 schema = environ['POSTGIS_DB_SCHEMA']
         self.schema = schema
 
+    def check(self):
+        with self.engine.connect() as con:
+            con.execute('SELECT 1')
+        return self.engine.url
+
     def ingest(self, file, table, schema=None, chunksize=100000, commit=True):
         """Creates a DB table and ingests a vector file into it.
 
