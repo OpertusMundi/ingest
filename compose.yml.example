@@ -21,12 +21,12 @@ services:
       target: '/secrets/secret_key'
       read_only: true
     - type: 'bind'
-      source: './secrets/postgres-password'
-      target: '/secrets/postgres-password'
+      source: './secrets/postgis/password'
+      target: '/secrets/postgis/password'
       read_only: true
     - type: 'bind'
-      source: './secrets/geoserver-password'
-      target: '/secrets/geoserver-password'
+      source: './secrets/geoserver/password'
+      target: '/secrets/geoserver/password'
       read_only: true
     - type: 'bind'
       source: './data/ingest.sqlite'
@@ -49,14 +49,15 @@ services:
       POSTGIS_HOST: 'postgres-1-opertusmundi'
       POSTGIS_PORT: '5432'
       POSTGIS_USER: 'ingest'
-      POSTGIS_DB_NAME: 'geodata'
+      POSTGIS_DB_NAME: 'opertusmundi-ingest'
       POSTGIS_DB_SCHEMA: 'public'
-      POSTGIS_PASS_FILE: '/secrets/postgres-password'
+      POSTGIS_PASS_FILE: '/secrets/postgis/password'
       GEOSERVER_URL: 'https://geoserver-1-opertusmundi'
       GEOSERVER_USER: 'ingest'
       GEOSERVER_WORKSPACE: 'default'
       GEOSERVER_STORE: 'postgres-1'
-      GEOSERVER_PASS_FILE: '/secrets/geoserver-password'
+      GEOSERVER_PASS_FILE: '/secrets/geoserver/password'
+      LOGGING_ROOT_LEVEL: 'INFO'
 
 networks:
   opertusmundi_network: 

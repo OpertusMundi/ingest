@@ -30,7 +30,7 @@ def test_get_health_check():
         assert res.status_code == 200
         r = res.get_json();
         if 'reason' in r:
-            logging.error('The service is unhealthy: %(reason)s (%(details)s)', r)
+            logging.error('The service is unhealthy: %(reason)s\n%(detail)s', r)
         logging.debug("From /_health: %s" % (r))
         assert r['status'] == 'OK'
         

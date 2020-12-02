@@ -39,6 +39,7 @@ The following environment variables should be set:
 - `TEMPDIR` (optional): The location for storing temporary files. If not set, the system temporary path location will be used.
 - `CORS`: List or string of allowed origins
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
+- `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
 
 A development server could be started with:
 ```
@@ -70,8 +71,8 @@ Prepare the following files/directories:
 
    * `./data/ingest.sqlite`:  the SQLite database (an empty database, if running for first time)
    * `./secrets/secret_key`: file needed (by Flask) for signing/encrypting session data
-   * `./secrets/postgres-password`: file containing the password for the PostGIS database user
-   * `./secrets/geoserver-password`: file containing the password for the Geoserver user
+   * `./secrets/postgis/password`: file containing the password for the PostGIS database user
+   * `./secrets/geoserver/password`: file containing the password for the Geoserver user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
 

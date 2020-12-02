@@ -14,8 +14,7 @@ services:
       args:
         VERSION: "${VERSION}"
     
-    entrypoint: ['nosetests']
-    command: ['--verbosity=2']
+    command: ['-v']
     
     volumes:
     - type: 'bind'
@@ -29,18 +28,20 @@ services:
     - 'opertusmundi_network'  
     
     environment:
-      DATABASE: './data/ingest-tests.sqlite'
+      TEMPDIR: '/work/temp'
+      INSTANCE_PATH: '/work/data'
+      DATABASE: '/work/data/ingest-testing.sqlite'      
       POSTGIS_HOST: 'postgres-1-opertusmundi'
       POSTGIS_PORT: '5432'
       POSTGIS_USER: 'ingest'
-      POSTGIS_DB_NAME: 'geodata-tests'
+      POSTGIS_DB_NAME: 'opertusmundi-ingest-tests'
       POSTGIS_DB_SCHEMA: 'public'
-      POSTGIS_PASS: 'secret'
+      POSTGIS_PASS_FILE: '/work/secrets/postgis/password'
       GEOSERVER_URL: 'https://geoserver-1-opertusmundi'
       GEOSERVER_USER: 'ingest'
       GEOSERVER_WORKSPACE: 'default'
       GEOSERVER_STORE: 'postgres-1'
-      GEOSERVER_PASS: 'secret'
+      GEOSERVER_PASS_FILE: '/work/secrets/geoserver/password'
  
 networks:
   opertusmundi_network: 

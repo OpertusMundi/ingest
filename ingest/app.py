@@ -116,7 +116,7 @@ spec = APISpec(
 )
 
 # Initialize app
-app = Flask(__name__, instance_relative_config=True)
+app = Flask(__name__, instance_relative_config=True, instance_path=getenv('INSTANCE_PATH'))
 app.config.from_mapping(
     SECRET_KEY=getenv('SECRET_KEY'),
     DATABASE=getenv('DATABASE'),
