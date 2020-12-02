@@ -72,7 +72,7 @@ steps:
   - export env_file=nosetests-${CI_BUILD_NUMBER}.env
   - >-
     (env -i 
-    DATABASE=./ingest-tests.sqlite
+    DATABASE=/work/data/ingest-tests.sqlite
     TEMPDIR=/work/temp
     INSTANCE_PATH=/work/data
     POSTGIS_HOST=$${POSTGRES_HOST}
@@ -90,10 +90,7 @@ steps:
   # Run tests
   - export postgres_server_address=$(getent ahostsv4 $${POSTGRES_HOST} | awk '/\<STREAM\>/{print $1}' | head -n 1)
   - test -n "$${postgres_server_address}"
-  - >-
-    docker run --rm -u 1000:1000 --volume $PWD:/work --workdir /work --env-file $${env_file} 
-    --add-host $${POSTGRES_HOST}:$${postgres_server_address}
-    $${image} nosetests -v -s
+  - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --add-host $${POSTGRES_HOST}:$${postgres_server_address} $${image} -v -s
 
 #
 # Services
