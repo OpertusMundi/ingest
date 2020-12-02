@@ -1,4 +1,5 @@
 import pycurl
+from os import environ
 
 class DataProvider(object):
     """A DataProvider for cURL."""
@@ -22,14 +23,16 @@ class Geoserver(object):
         username (string): Username for GeoServer HTTP authentication.
         password (string): Password for GeoServer HTTP authentication.
     """
-    def __init__(self, url, username, password):
+    def __init__(self, url=None, username=None, password=None):
         """Initiates the GeoServer class.
         Parameters:
             url (string): The GeoServer REST full url.
             username (string): Username for GeoServer HTTP authentication.
             password (string): Password for GeoServer HTTP authentication.
         """
-        super(Geoserver, self).__init__()
+        url = url or environ['GEOSERVER_URL']
+        username = username or environ['GEOSERVER_USER']
+        password = password or environ['GEOSERVER_PASS']
         self.rest_url = url + '/rest'
         self.username = username
         self.password = password

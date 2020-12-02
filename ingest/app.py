@@ -55,12 +55,11 @@ def _executorCallback(future):
         dbc.commit()
         accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
-def _ingestAndPublish(src_file, ticket, env):
+def _ingestAndPublish(src_file, ticket):
     """Ingest file content to PostgreSQL and publish to geoserver.
     Parameters:
         src_file (string): Full path to source file.
         ticket (string): The ticket of the request that will be also used as table and layer name.
-        env (dict): Contains enviroment variables.
     Raises:
         Exception: In case postgres or geoserver requests fail.
     Returns:
@@ -78,12 +77,24 @@ def _ingestAndPublish(src_file, ticket, env):
             handle.extractall(src_path)
         src_file = src_path
     try:
-        postgres = Postgres(user=env['POSTGIS_USER'], password=env['POSTGIS_PASS'], db=env['POSTGIS_DB_NAME'], schema=env['POSTGIS_DB_SCHEMA'], host=env['POSTGIS_HOST'], port=env['POSTGIS_PORT'])
+        postgres = Postgres()
         rows = postgres.ingest(src_file, ticket)
-        geoserver = Geoserver(env['GEOSERVER_URL'], username=env['GEOSERVER_USER'], password=env['GEOSERVER_PASS'])
-        geoserver.createWorkspace(env['GEOSERVER_WORKSPACE'])
-        geoserver.createStore(name=env['GEOSERVER_STORE'], pg_db=env['POSTGIS_DB_NAME'], pg_user=env['POSTGIS_USER'], pg_password=env['POSTGIS_PASS'], workspace=env['GEOSERVER_WORKSPACE'], pg_host=env['POSTGIS_HOST'], pg_port=env['POSTGIS_PORT'], pg_schema=env['POSTGIS_DB_SCHEMA'])
-        geoserver.publish(store=env['GEOSERVER_STORE'], table=ticket, workspace=env['GEOSERVER_WORKSPACE'])
+        geoserver = Geoserver()
+        workspace = getenv('GEOSERVER_WORKSPACE')
+        if workspace is not None:
+            geoserver.createWorkspace(workspace)
+        store = dict(
+            name=getenv('GEOSERVER_STORE'),
+            workspace=workspace,
+            pg_db=getenv('POSTGIS_DB_NAME'),
+            pg_user=getenv('POSTGIS_USER'),
+            pg_password=getenv('POSTGIS_PASS'),
+            pg_host=getenv('POSTGIS_HOST'),
+            pg_port=getenv('POSTGIS_PORT'),
+            pg_schema=getenv('POSTGIS_DB_SCHEMA')
+        )
+        geoserver.createStore(**store)
+        geoserver.publish(store=store['name'], table=ticket, workspace=workspace)
     except Exception as e:
         raise Exception(e)
     return ({
@@ -92,13 +103,12 @@ def _ingestAndPublish(src_file, ticket, env):
     }, rows)
 
 # Read (required) environment parameters
-env = {}
 for variable in [
     'POSTGIS_HOST', 'POSTGIS_USER', 'POSTGIS_PASS', 'POSTGIS_PORT', 'POSTGIS_DB_NAME', 'POSTGIS_DB_SCHEMA',
-    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_WORKSPACE', 'GEOSERVER_STORE'
+    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_STORE'
 ]:
-    env[variable] = getenv(variable)
-    if env[variable] is None:
+    value = getenv(variable)
+    if value is None:
         raise Exception('Environment variable {} is not set.'.format(variable))
 
 
@@ -137,13 +147,13 @@ if getenv('CORS') is not None:
     cors = CORS(app, origins=origins)
 
 @executor.job
-def enqueue(src_file, ticket, env):
+def enqueue(src_file, ticket):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     dbc = db.get_db()
     dbc.execute('INSERT INTO tickets (ticket) VALUES(?);', [ticket])
     dbc.commit()
     try:
-        endpoints, rows = _ingestAndPublish(src_file, ticket, env)
+        endpoints, rows = _ingestAndPublish(src_file, ticket)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     return (ticket, json.dumps(endpoints), 1, None, rows)
@@ -310,7 +320,7 @@ def ingest():
     if response == 'prompt':
         start_time = datetime.now()
         try:
-            endpoints, rows = _ingestAndPublish(src_file, ticket, env)
+            endpoints, rows = _ingestAndPublish(src_file, ticket)
         except Exception as e:
             execution_time = round((datetime.now() - start_time).total_seconds(), 3)
             accountLogger(ticket=ticket, success=False, execution_start=start_time, execution_time=execution_time, comment=str(e))
@@ -319,7 +329,7 @@ def ingest():
         accountLogger(ticket=ticket, success=True, execution_start=start_time, execution_time=execution_time, rows=rows)
         return make_response(endpoints, 200)
     else:
-        enqueue.submit(src_file, ticket, env)
+        enqueue.submit(src_file, ticket)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "endpoints": "/endpoints/{}".format(ticket)}, 202)
 
 @app.route("/status/<ticket>")

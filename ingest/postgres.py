@@ -2,7 +2,7 @@ import geopandas as gpd
 from geoalchemy2 import Geometry, WKTElement
 from sqlalchemy import *
 import shapely
-from os import path
+from os import path, environ
 
 class Postgres(object):
     """Creates a connection to PostgreSQL database.
@@ -11,12 +11,19 @@ class Postgres(object):
         schema (string): The active database schema.
     """
 
-    def __init__(self, user, password, db, schema='public', host='localhost', port='5432'):
+    def __init__(self, database_url=None, schema=None):
         """The postgres constructor to initiate a (lazy) connection."""
-        self.engine = create_engine("postgresql://%s:%s@%s:%s/%s" % (user, password, host, port, db))
+        if database_url is None:
+            database_url = 'postgresql://%(POSTGIS_USER)s:%(POSTGIS_PASS)s@%(POSTGIS_HOST)s:%(POSTGIS_PORT)s/%(POSTGIS_DB_NAME)s' % environ
+        self.engine = create_engine(database_url)
+        if schema is None:
+            if environ['POSTGIS_DB_SCHEMA'] is None:
+                schema = 'public'
+            else:
+                schema = environ['POSTGIS_DB_SCHEMA']
         self.schema = schema
 
-    def ingest(self, file, table, schema=None, chunksize=100000):
+    def ingest(self, file, table, schema=None, chunksize=100000, commit=True):
         """Creates a DB table and ingests a vector file into it.
 
         It reads a vector file with geopandas (fiona) and writes the attributes into a database table.
