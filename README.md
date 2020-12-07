@@ -24,7 +24,7 @@ flask init-db
 
 The following environment variables should be set:
 - `FLASK_ENV`: `development` or `production`.
-- `FLASK_APP`: `ingest` (if running as a container, this will be always set). 
+- `FLASK_APP`: `ingest` (if running as a container, this will be always set).
 - `POSTGIS_HOST`: PostgreSQL Host Server.
 - `POSTGIS_PORT`: PostgreSQL Port.
 - `POSTGIS_DB_NAME`: PostgreSQL database to use.
@@ -48,22 +48,22 @@ flask run
 
 ## Usage
 
-You can browse the full [OpenAPI documentation](https://opertusmundi.github.io/ingest/)
+You can browse the full [OpenAPI documentation](https://opertusmundi.github.io/ingest/).
 
-The main endpoint `/ingest` is accessible via a POST request and expects the following parameters:
-- `resource` (required): A string representing the spatial file resolvable path **or** a stream containing the spatial file.
-- `response`: `prompt` (default) or `deferred`.
+The main endpoints `/ingest` and `/publish` are accessible via POST requests. Each such request is associated with a request ticket, and optionally by a idempotency-key set by the request (the value of the request header `X-Idempotence-Key`).
 
-In case of `prompt` response the service should promptly initiate the transformation process and wait to finish in order to return the response, whereas in the `deferred` case a response is sent immediately without waiting for the process to finish. In latter case, one could request `/status/\<ticket\>` in order to get the status of the process corresponding to a specific ticket or `/endpoints/\<ticket\>` to retrieve the GeoServer services endpoints associated with the specific ticket.
+For the case of ingestion, the response can be `prompt` or `deferred`, set by the corresponding value `response` in the request body. In case of `prompt` response the service should promptly initiate the ingestion process and wait to finish in order to return the response, whereas in the `deferred` case a response is sent immediately without waiting for the process to finish. In any case, one could request `/status/{ticket}` in order to get the status of the process corresponding to a specific ticket or `/result/{ticket}` to retrieve the table information that the vector file was ingested into.
 
-Once deployed, info about the endpoints and their possible HTTP parameters could be obtained by requesting the index of the service, i.e. for development environment http://localhost:5000.
+Furthermore, the associated ticket of an idempotene-key could be retrieved with the request `/ticket_by_key/{key}`.
+
+Once deployed, the OpenAPI JSON is served by the index of the service.
 
 
 ## Build and run as a container
 
 Copy `.env.example` to `.env` and configure if needed (e.g `FLASK_ENV` variable).
 
-Copy `compose.yml.example` to `compose.yml` (or `docker-compose.yml`) and adjust to your needs (e.g. specify volume source locations etc.). You will at least need to configure the network (inside `compose.yml`) to attach to. 
+Copy `compose.yml.example` to `compose.yml` (or `docker-compose.yml`) and adjust to your needs (e.g. specify volume source locations etc.). You will at least need to configure the network (inside `compose.yml`) to attach to.
 
 For example, you can create a private network named `opertusmundi_network`:
 
@@ -83,7 +83,7 @@ Prepare the following files/directories:
    * `./temp`: a directory to be used as temporary storage
 
 Start application:
-    
+
     docker-compose -f compose.yml up
 
 
