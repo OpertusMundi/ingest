@@ -29,11 +29,17 @@ def init_db():
 
 
 @click.command('init-db')
+@click.option('-f', '--force', is_flag=True, show_default=True, help='Clean the database if exists.')
 @with_appcontext
-def init_db_command():
-    """Clear the existing data and create new tables."""
-    init_db()
-    click.echo('Initialized the database.')
+def init_db_command(force):
+    """Initialize database."""
+    dbc = get_db()
+    table = dbc.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tickets';").fetchone()
+    if table is None or force:
+        init_db()
+        click.echo('Initialized the database.')
+    else:
+        click.echo('Database already exists.')
 
 def init_app(app):
     app.teardown_appcontext(close_db)
