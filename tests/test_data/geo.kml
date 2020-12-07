@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Folder><name>geo</name>
+  <Placemark>
+	<name>First point</name>
+      <Point><coordinates>0.25,48.1</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<name>Second point</name>
+      <Point><coordinates>1.1,49.2</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<name>Third point</name>
+      <Point><coordinates>0.75,47.5</coordinates></Point>
+  </Placemark>
+</Folder>
+</Document></kml>
