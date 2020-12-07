@@ -89,6 +89,14 @@ class Geoserver(object):
             raise Exception('Metrics not found.')
         return self.rest_url
 
+    def checkIfLayersExists(self, workspace, layer):
+        exists = True
+        try:
+            self._get('workspaces/%s/layers/%s' % (workspace, layer))
+        except Exception as e:
+            exists = False
+        return exists
+
     def createWorkspace(self, workspace):
         """Creates, if it does not exist, a workspace in GeoServer.
         Parameters:

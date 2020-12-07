@@ -1,9 +1,9 @@
 from flask import Flask
-from flask import request, current_app, make_response
+from flask import request, current_app, make_response, g
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from os import path, getenv, environ, makedirs, unlink
-from shutil import move
+from shutil import rmtree
 import tempfile
 from uuid import uuid4
 from hashlib import md5
@@ -15,7 +15,7 @@ import zipfile
 import tarfile
 import json
 from . import db
-from .postgres import Postgres
+from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
 from .logging import getLoggers
 
@@ -32,6 +32,10 @@ def _getTempDir():
     """Return the temporary directory"""
     return getenv('TEMPDIR') or tempfile.gettempdir()
 
+def _getWorkingPath(ticket):
+    """Returns the working directory for each request."""
+    return path.join(_getTempDir(), __name__, ticket)
+
 def _checkDirectoryWritable(d):
     fd, fname = tempfile.mkstemp(None, None, d)
     unlink(fname);
@@ -47,28 +51,33 @@ def _checkConnectToGeoserver():
     mainLogger.debug('_checkConnectToGeoserver(): Connected to %s' % (gs_url))
 
 def _executorCallback(future):
-    """The callback function called when a job has succesfully completed."""
+    """The callback function called when a job has been completed."""
     ticket, result, success, comment, rows = future.result()
     with app.app_context():
         dbc = db.get_db()
         time = dbc.execute('SELECT requested_time FROM tickets WHERE ticket = ?;', [ticket]).fetchone()['requested_time']
         execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds(),3)
-        dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=? WHERE ticket=?;', [result, success, execution_time, comment, ticket])
+        dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=?, rows=? WHERE ticket=?;', [result, success, execution_time, comment, rows, ticket])
         dbc.commit()
         accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
-def _ingestAndPublish(src_file, ticket):
+def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None):
     """Ingest file content to PostgreSQL and publish to geoserver.
     Parameters:
         src_file (string): Full path to source file.
         ticket (string): The ticket of the request that will be also used as table and layer name.
+        tablename (string): The resulted table name (default: ticket)
     Raises:
-        Exception: In case postgres or geoserver requests fail.
+        Exception: In case postgres request fail.
     Returns:
-        (dict) The GeoServer endpoints for WMS and WFS services.
+        (dict) Schema, table name and length.
     """
-    # First, check if source file is compressed
-    src_path = path.dirname(src_file)
+    # Create tablename, schema
+    tablename = tablename or ticket
+    schema = schema or getenv('POSTGIS_DB_SCHEMA')
+    # Check if source file is compressed
+    working_path = _getWorkingPath(ticket)
+    src_path = path.join(working_path, 'extracted')
     if tarfile.is_tarfile(src_file):
         handle = tarfile.open(src_file)
         handle.extractall(src_path)
@@ -78,31 +87,47 @@ def _ingestAndPublish(src_file, ticket):
         with zipfile.ZipFile(src_file, 'r') as handle:
             handle.extractall(src_path)
         src_file = src_path
+    # Ingest
+    postgres = Postgres()
+    if environ['FLASK_ENV'] == 'testing':
+        # If environment is testing, do not commit
+        result = postgres.ingest(src_file, tablename, schema=schema, commit=False)
+    else:
+        result = postgres.ingest(src_file, tablename, schema=schema)
     try:
-        postgres = Postgres()
-        rows = postgres.ingest(src_file, ticket)
-        geoserver = Geoserver()
-        workspace = getenv('GEOSERVER_WORKSPACE')
-        if workspace is not None:
-            geoserver.createWorkspace(workspace)
-        store = dict(
-            name=getenv('GEOSERVER_STORE'),
-            workspace=workspace,
-            pg_db=getenv('POSTGIS_DB_NAME'),
-            pg_user=getenv('POSTGIS_USER'),
-            pg_password=getenv('POSTGIS_PASS'),
-            pg_host=getenv('POSTGIS_HOST'),
-            pg_port=getenv('POSTGIS_PORT'),
-            pg_schema=getenv('POSTGIS_DB_SCHEMA')
-        )
-        geoserver.createStore(**store)
-        geoserver.publish(store=store['name'], table=ticket, workspace=workspace)
+        rmtree(working_path)
     except Exception as e:
-        raise Exception(e)
-    return ({
-        "WMS": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(env['GEOSERVER_WORKSPACE'], ticket),
-        "WFS": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(env['GEOSERVER_WORKSPACE'], ticket)
-    }, rows)
+        pass
+    return dict(zip(('schema', 'table', 'length'), result))
+
+def _publishTable(table, schema=None, workspace=None):
+    """Publishes the contents of a PostGIS table to GeoServer.
+    Parameters:
+        table (string): The table name
+    Returns:
+        (dict) The GeoServer layer endpoint.
+    """
+    geoserver = Geoserver()
+    workspace = workspace or getenv('GEOSERVER_WORKSPACE')
+    if workspace is not None:
+        geoserver.createWorkspace(workspace)
+    store = dict(
+        name=getenv('GEOSERVER_STORE'),
+        workspace=workspace,
+        pg_db=getenv('POSTGIS_DB_NAME'),
+        pg_user=getenv('POSTGIS_USER'),
+        pg_password=getenv('POSTGIS_PASS'),
+        pg_host=getenv('POSTGIS_HOST'),
+        pg_port=getenv('POSTGIS_PORT'),
+        pg_schema=schema or getenv('POSTGIS_DB_SCHEMA')
+    )
+    geoserver.createStore(**store)
+    geoserver.publish(store=store['name'], table=table, workspace=workspace)
+
+    return {
+        "wms": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(workspace, table),
+        "wfs": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(workspace, table)
+    }
 
 # Read (required) environment parameters
 for variable in [
@@ -114,7 +139,7 @@ for variable in [
         raise Exception('Environment variable {} is not set.'.format(variable))
 
 
-# OpenAPI documentation
+# Initialize OpenAPI documentation
 spec = APISpec(
     title="Ingest/Publish API",
     version=getenv('VERSION'),
@@ -149,16 +174,74 @@ if getenv('CORS') is not None:
     cors = CORS(app, origins=origins)
 
 @executor.job
-def enqueue(src_file, ticket):
+def enqueue(src_file, ticket, schema=None, tablename=None):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     dbc = db.get_db()
-    dbc.execute('INSERT INTO tickets (ticket) VALUES(?);', [ticket])
+    dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
     dbc.commit()
     try:
-        endpoints, rows = _ingestAndPublish(src_file, ticket)
+        result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
-    return (ticket, json.dumps(endpoints), 1, None, rows)
+    rows = result.pop('length')
+    return (ticket, json.dumps(result), 1, None, rows)
+
+@app.before_request
+def prepare_request():
+    """Prepares environment for the POST request."""
+    if request.method == 'POST':
+        # Request time
+        g.request_time = datetime.now()
+        # Create a unique ticket for the request
+        g.ticket = md5(str(uuid4()).encode()).hexdigest()
+        # Idempotent Key from headers
+        idempotent_key = request.headers.get('X-Idempotency-Key')
+        if idempotent_key is not None:
+            # Check uniqueness
+            with app.app_context():
+                dbc = db.get_db()
+                exists = dbc.execute("SELECT idempotent_key FROM tickets WHERE idempotent_key=?;", [idempotent_key]).fetchone() is not None
+            if exists:
+                g.idempotent_key = None
+                return make_response('Idempotent-Key already exists.', 400)
+        g.idempotent_key = idempotent_key
+
+@app.after_request
+def log_request(response):
+    """Log request.
+    Log only POST requests. If request has been deferred, the queue job is responsible for logging.
+    """
+    if response.status_code == 202 or request.method != 'POST':
+        return response
+    ticket, idempotent_key, request_time = (getattr(g, attr) for attr in ['ticket', 'idempotent_key', 'request_time'])
+    execution_time = round((datetime.now() - request_time).total_seconds(), 3)
+    if response.status_code != 200:
+        # In case of errors, it will not write to database
+        comment = response.get_data(as_text=True)
+        accountLogger(ticket=ticket, success=False, execution_start=request_time, execution_time=execution_time, comment=comment)
+        return response
+    # In case method is POST and response status is 200
+    response_json = response.json
+    rows = response_json.pop('length') if 'length' in response_json else None
+    with app.app_context():
+        dbc = db.get_db()
+        dbc.execute(
+            'INSERT INTO tickets (ticket, idempotent_key, request, result, status, success, requested_time, execution_time, rows) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?);',
+            [ticket, idempotent_key, request.endpoint, json.dumps(response_json), True, True, request_time, execution_time, rows]
+        )
+        dbc.commit()
+    accountLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
+    return response
+
+@app.teardown_request
+def clean_temp(error=None):
+    """Cleans the temp directory."""
+    if hasattr(g, 'response_type') and hasattr(g, 'ticket') and g.response_type == 'prompt':
+        working_path = _getWorkingPath(g.ticket)
+        try:
+            rmtree(working_path)
+        except Exception as e:
+            pass
 
 @app.route("/")
 def index():
@@ -195,8 +278,7 @@ def health_check():
                     description: more details on this failure (if failed)
               examples:
                 example-1:
-                  value: |-
-                    {"status": "OK"}
+                  status: "OK"
     """
     mainLogger.info('Performing health checks...')
     # Check that temp directory is writable
@@ -221,9 +303,17 @@ def ingest():
     """The ingest endpoint.
     ---
     post:
-      summary: Ingest a vector file (Shapefile/KML) into PostGIS and publish the layer to GeoServer.
+      summary: Ingest a vector file (Shapefile/KML) into PostGIS.
       tags:
         - Ingest
+      parameters:
+        - in: header
+          name: X-Idempotency-Key
+          description: Associates the request with an Idempotency Key (it has to be unique).
+          schema:
+            type: string
+            format: uuid
+          required: false
       requestBody:
         required: true
         content:
@@ -240,6 +330,12 @@ def ingest():
                   enum: [prompt, deferred]
                   default: prompt
                   description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+                tablename:
+                  type: string
+                  description: The name of the table into which the data will be ingested (it should be a new table). By default, a unique random name will be given to the new table.
+                schema:
+                  type: string
+                  description: The schema in which the table will be created (it has to exist). If not given, the default schema will be used.
               required:
                 - resource
           application/x-www-form-urlencoded:
@@ -254,6 +350,12 @@ def ingest():
                   enum: [prompt, deferred]
                   default: prompt
                   description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+                tablename:
+                  type: string
+                  description: The name of the table into which the data will be ingested (it should be a new table). By default, a unique random name will be given to a new table.
+                schema:
+                  type: string
+                  description: The schema in which the table will be created (schema has to exist). If not given, the default schema will be used.
               required:
                 - resource
       responses:
@@ -264,12 +366,18 @@ def ingest():
               schema:
                 type: object
                 properties:
-                  WMS:
+                  schema:
                     type: string
-                    description: WMS endpoint
-                  WFS:
+                    description: The schema of the created table.
+                  table:
                     type: string
-                    description: WFS endpoint
+                    description: The name of the created table.
+                  length:
+                    type: integer
+                    description: The number of features stored in the table.
+                  type:
+                    type: string
+                    description: The response type as requested.
         202:
           description: Accepted for processing, but ingestion/publish has not been completed.
           content:
@@ -283,9 +391,9 @@ def ingest():
                   status:
                     type: string
                     description: The *status* endpoint to poll for the status of the request.
-                  endpoints:
+                  type:
                     type: string
-                    description: The WMS/WFS endpoints to get the resulting resource when ready.
+                    description: The response type as requested.
           links:
             GetStatus:
               operationId: getStatus
@@ -293,18 +401,22 @@ def ingest():
                 ticket: '$response.body#/ticket'
               description: The `ticket` value returned in the response can be used as the `ticket` parameter in `GET /status/{ticket}`.
         400:
-          description: Client error.
+          description: General client error or database schema does not exist.
+        403:
+          description: Insufficient privilege for writing in the database schema.
     """
 
     # Create a unique ticket for the request
-    ticket = md5(str(uuid4()).encode()).hexdigest()
-    # ticket = str(uuid4()).replace('-', '')
+    ticket = g.ticket
 
-    # Get the type of the response
+    # Get and validate arguments
     response = request.values.get('response') or 'prompt'
     if response != 'prompt' and response != 'deferred':
         mainLogger.info('Client error: %s', "Wrong value for parameter 'response'")
         return make_response("Parameter 'response' can take one of: 'prompt', 'deferred'", 400)
+    tablename = request.values.get('tablename')
+    schema = request.values.get('schema')
+
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
         src_file = request.values.get('resource')
@@ -315,27 +427,98 @@ def ingest():
             return make_response({"Error": "Resource not uploaded."}, 400)
 
         # Create tmp directory and store the uploaded file.
-        tempdir = _getTempDir();
-        tempdir = path.join(tempdir, 'ingest')
-        src_path = path.join(tempdir, 'src', ticket)
+        working_path = _getWorkingPath(ticket)
+        src_path = path.join(working_path, 'src')
         _makeDir(src_path)
         src_file = path.join(src_path, secure_filename(resource.filename))
         resource.save(src_file)
 
     if response == 'prompt':
-        start_time = datetime.now()
+        g.response_type = 'prompt'
         try:
-            endpoints, rows = _ingestAndPublish(src_file, ticket)
+            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema)
         except Exception as e:
-            execution_time = round((datetime.now() - start_time).total_seconds(), 3)
-            accountLogger(ticket=ticket, success=False, execution_start=start_time, execution_time=execution_time, comment=str(e))
-            return make_response(str(e), 500)
-        execution_time = round((datetime.now() - start_time).total_seconds(), 3)
-        accountLogger(ticket=ticket, success=True, execution_start=start_time, execution_time=execution_time, rows=rows)
-        return make_response(endpoints, 200)
+            if isinstance(e, SchemaException):
+                return make_response(str(e), 400)
+            elif isinstance(e, InsufficientPrivilege):
+                return make_response(str(e), 403)
+            else:
+                return make_response(str(e), 500)
+        return make_response({**result, "type": response}, 200)
     else:
-        enqueue.submit(src_file, ticket)
-        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "endpoints": "/endpoints/{}".format(ticket)}, 202)
+        g.response_type = 'deferred'
+        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema)
+        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": response}, 202)
+
+@app.route("/publish", methods=["POST"])
+def publish():
+    """The ingest endpoint.
+    ---
+    post:
+      summary: Publishes a layer to GeoServer from PostGIS table.
+      tags:
+        - Publish
+      parameters:
+        - in: header
+          name: X-Idempotency-Key
+          schema:
+            type: string
+            format: uuid
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                table:
+                  type: string
+                  description: The table name.
+                schema:
+                  type: string
+                  description: The database schema in which the table exists.
+                workspace:
+                  type: string
+                  description: The GeoServer workspace in which the layer will be published (it will be created if does not exist). If not given, the default workspace will be used.
+              required:
+                - table
+      responses:
+        200:
+          description: Publication completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wms:
+                    type: string
+                    description: WMS endpoint
+                  wfs:
+                    type: string
+                    description: WFS endpoint
+        400:
+          description: General client error or table does not exist.
+        403:
+          description: Layer already published.
+    """
+    table = request.values.get('table')
+    if table is None:
+        return make_response("Missing required value 'table'.", 400)
+    schema = request.values.get('schema') or getenv('POSTGIS_DB_SCHEMA')
+    postgres = Postgres(schema=schema)
+    if not postgres.checkIfTableExists(table):
+        return make_response("Table '%s' does not exist in schema '%s'." % (table, schema), 400)
+    workspace = request.values.get('workspace') or getenv('GEOSERVER_WORKSPACE')
+    geoserver = Geoserver()
+    if geoserver.checkIfLayersExists(workspace, table):
+        return make_response("Layer '%s' already published in '%s'." % (table, workspace), 403)
+
+    try:
+        endpoints = _publishTable(table, schema=schema, workspace=workspace)
+    except Exception as e:
+        return make_response(str(e), 500)
+    return make_response(endpoints, 200)
 
 @app.route("/status/<ticket>")
 def status(ticket):
@@ -375,7 +558,7 @@ def status(ticket):
                     type: string
                     format: datetime
                     description: The timestamp of the request.
-                  execution_time(s):
+                  executionTime:
                     type: integer
                     description: The execution time in seconds.
         404:
@@ -390,18 +573,18 @@ def status(ticket):
             success = bool(results['success'])
         else:
             success = None
-        return make_response({"completed": bool(results['status']), "success": success, "requested": results['requested_time'], "execution_time(s)": results['execution_time'], "comment": results['comment']}, 200)
+        return make_response({"completed": bool(results['status']), "success": success, "requested": results['requested_time'].isoformat(), "executionTime": results['execution_time'], "comment": results['comment']}, 200)
     return make_response('Not found.', 404)
 
-@app.route("/endpoints/<ticket>")
-def endpoints(ticket):
-    """Get the resulted endpoints associated with a specific ticket.
+@app.route("/result/<ticket>")
+def result(ticket):
+    """Get the result associated with a specific ingest ticket.
     ---
     get:
-      summary: Get the result of a request.
-      description: Returns the WMS/WFS endpoints resulted from a ingestion/publication request corresponding to a specific ticket.
+      summary: Get the result of the ingest.
+      description: Returns the table in PostGIS resulted from a ingestion request corresponding to a specific ticket.
       tags:
-        - Endpoints
+        - Result
       parameters:
         - name: ticket
           in: path
@@ -417,25 +600,69 @@ def endpoints(ticket):
               schema:
                 type: object
                 properties:
-                  WMS:
+                  schema:
                     type: string
-                    description: WMS endpoint
-                  WFS:
+                    description: The schema of the created table.
+                  table:
                     type: string
-                    description: WFS endpoint
+                    description: The name of the created table.
+                  length:
+                    type: integer
+                    description: The number of features stored in the table.
         404:
-          description: Ticket not found or transform has not been completed.
+          description: Ticket not found or ingest has not been completed.
     """
     if ticket is None:
         return make_response('Resource ticket is missing.', 400)
     dbc = db.get_db()
-    result = dbc.execute('SELECT result FROM tickets WHERE ticket = ?', [ticket]).fetchone()['result']
-    if result is None:
+    query = dbc.execute('SELECT result, rows FROM tickets WHERE ticket = ? and request = ?', [ticket, 'ingest']).fetchone()
+    if query is None:
         return make_response('Not found.', 404)
-    return make_response(json.loads(result), 200)
+    return make_response({**json.loads(query['result']), 'length': query['rows']}, 200)
+
+@app.route("/ticket_by_key/<key>")
+def get_ticket(key):
+    """Get a request ticket associated with an idempotent key.
+    ---
+    get:
+      summary: Returns a request ticket associated with an idempotent key.
+      tags:
+        - Ticket
+      parameters:
+        - name: key
+          in: path
+          description: The idempotent key as sent in X-Idempotency-Key header.
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: The associated request and ticket.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket:
+                    type: string
+                    description: The associated ticket.
+                  request:
+                    type: string
+                    enum: [ingest, publish]
+                    description: The request of this ticket.
+        404:
+          description: Idempotent key not found.
+    """
+    dbc = db.get_db()
+    query = dbc.execute('SELECT ticket, request FROM tickets WHERE idempotent_key = ?', [key]).fetchone()
+    if query is None:
+        return make_response('Not found.', 404)
+    return make_response({'ticket': query['ticket'], 'request': query['request']}, 200)
 
 with app.test_request_context():
     spec.path(view=ingest)
+    spec.path(view=publish)
     spec.path(view=status)
-    spec.path(view=endpoints)
+    spec.path(view=result)
     spec.path(view=health_check)
+    spec.path(view=get_ticket)

@@ -1,8 +1,15 @@
 import geopandas as gpd
 from geoalchemy2 import Geometry, WKTElement
 from sqlalchemy import *
+from sqlalchemy.exc import ProgrammingError
 import shapely
 from os import path, environ
+import warnings
+
+class SchemaException(Exception):
+    pass
+class InsufficientPrivilege(Exception):
+    pass
 
 class Postgres(object):
     """Creates a connection to PostgreSQL database.
@@ -28,6 +35,13 @@ class Postgres(object):
             con.execute('SELECT 1')
         return self.engine.url
 
+    def checkIfTableExists(self, table, schema=None):
+        schema = schema or self.schema
+        with self.engine.connect() as con:
+            cur = con.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s');" % (schema, table))
+            exists = cur.fetchone()[0]
+        return exists
+
     def ingest(self, file, table, schema=None, chunksize=100000, commit=True):
         """Creates a DB table and ingests a vector file into it.
 
@@ -41,8 +55,7 @@ class Postgres(object):
             schema (string): The DB schema to be used (if declared, it will bypass the class attribute).
             chunksize (int): Number of records that will be read from the file in each turn.
         """
-        if schema is None:
-            schema = self.schema
+        schema = schema or self.schema
         extension = path.splitext(file)[1]
         if extension == '.kml':
             gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'r'
@@ -52,27 +65,41 @@ class Postgres(object):
         with self.engine.connect() as con:
             trans = con.begin()
             while eof == False:
-                df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
-                length = len(df)
-                if length == 0:
-                    eof = True
-                    continue
-                rows = rows + length
-                srid = df.crs.to_epsg()
-                if extension == '.kml':
-                    df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y: (x, y), polygon))
-                df['geom'] = df['geometry'].apply(lambda x: WKTElement(x.wkt, srid=srid))
-                if i == 0:
-                    indices = self._findIndex(df)
-                    gtype = df.geometry.geom_type.unique()
-                    if len(gtype) == 1:
-                        gtype = gtype[0]
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
+                    length = len(df)
+                    if length == 0:
+                        eof = True
+                        continue
+                    rows = rows + length
+                    srid = df.crs.to_epsg()
+                    if extension == '.kml':
+                        df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y: (x, y), polygon))
+                    df['geom'] = df['geometry'].apply(lambda x: WKTElement(x.wkt, srid=srid))
+                    if i == 0:
+                        indices = self._findIndex(df)
+                        gtype = df.geometry.geom_type.unique()
+                        if len(gtype) == 1:
+                            gtype = gtype[0]
+                        else:
+                            gtype = 'GEOMETRY'
+                        if_exists = 'fail'
                     else:
-                        gtype = 'GEOMETRY'
-                df.drop('geometry', 1, inplace=True)
-                i += 1
-
-                df.to_sql(table, con=con, schema=schema, if_exists='append', index=False, dtype={'geom': Geometry(gtype, srid=srid)})
+                        if_exists = 'append'
+                    df.drop('geometry', 1, inplace=True)
+                    try:
+                        df.to_sql(table, con=con, schema=schema, if_exists=if_exists, index=False, dtype={'geom': Geometry(gtype, srid=srid)})
+                    except ValueError as e:
+                        raise ValueError(e)
+                    except ProgrammingError as e:
+                        if 'InvalidSchemaName' in str(e):
+                            raise SchemaException('Schema "%s" does not exist.' % (schema))
+                        elif 'InsufficientPrivilege' in str(e):
+                            raise InsufficientPrivilege('Permission denied for schema "%s".' % (schema))
+                        else:
+                            raise e
+                    i += 1
 
             if commit:
                 trans.commit()
@@ -87,13 +114,12 @@ class Postgres(object):
                         else:
                             con.execute('CREATE UNIQUE INDEX ON {0}."{1}" ("{2}")'.format(schema, table, index))
                     except Exception as e:
-                        print(str(e))
                         pass
             else:
                 trans.rollback()
             trans.close()
 
-        return rows
+        return (schema, table, rows)
 
     def _findIndex(self, df):
         """Identifies unique fields in the dataframe"""
