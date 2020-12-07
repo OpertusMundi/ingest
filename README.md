@@ -39,6 +39,7 @@ The following environment variables should be set:
 - `TEMPDIR` (optional): The location for storing temporary files. If not set, the system temporary path location will be used.
 - `CORS`: List or string of allowed origins
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
+- `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
 
 A development server could be started with:
 ```
@@ -46,6 +47,8 @@ flask run
 ```
 
 ## Usage
+
+You can browse the full [OpenAPI documentation](https://opertusmundi.github.io/ingest/)
 
 The main endpoint `/ingest` is accessible via a POST request and expects the following parameters:
 - `resource` (required): A string representing the spatial file resolvable path **or** a stream containing the spatial file.
@@ -60,7 +63,11 @@ Once deployed, info about the endpoints and their possible HTTP parameters could
 
 Copy `.env.example` to `.env` and configure if needed (e.g `FLASK_ENV` variable).
 
-Copy `compose.yml.example` to `compose.yml` (or `docker-compose.yml`) and adjust to your needs (e.g. specify volume source locations etc.).
+Copy `compose.yml.example` to `compose.yml` (or `docker-compose.yml`) and adjust to your needs (e.g. specify volume source locations etc.). You will at least need to configure the network (inside `compose.yml`) to attach to. 
+
+For example, you can create a private network named `opertusmundi_network`:
+
+    docker network create --attachable opertusmundi_network
 
 Build:
 
@@ -70,8 +77,8 @@ Prepare the following files/directories:
 
    * `./data/ingest.sqlite`:  the SQLite database (an empty database, if running for first time)
    * `./secrets/secret_key`: file needed (by Flask) for signing/encrypting session data
-   * `./secrets/postgres-password`: file containing the password for the PostGIS database user
-   * `./secrets/geoserver-password`: file containing the password for the Geoserver user
+   * `./secrets/postgis/password`: file containing the password for the PostGIS database user
+   * `./secrets/geoserver/password`: file containing the password for the Geoserver user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
 

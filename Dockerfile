@@ -41,8 +41,14 @@ WORKDIR /var/local/ingest
 RUN mkdir ./logs && chown flask:flask ./logs
 COPY --chown=flask logging.conf .
 
-ENV FLASK_APP="ingest" FLASK_ENV="production" FLASK_DEBUG="false"
-ENV TEMPDIR="" SECRET_KEY_FILE="/var/local/ingest/secret_key" TLS_CERTIFICATE="" TLS_KEY=""
+ENV FLASK_APP="ingest" \
+    FLASK_ENV="production" \
+    FLASK_DEBUG="false" \
+    INSTANCE_PATH="/var/local/ingest/data" \
+    TEMPDIR="" \
+    SECRET_KEY_FILE="/var/local/ingest/secret_key" \
+    TLS_CERTIFICATE="" \
+    TLS_KEY=""
 
 USER flask
 CMD ["/usr/local/bin/docker-command.sh"]

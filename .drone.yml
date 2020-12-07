@@ -34,7 +34,7 @@ steps:
   commands:
   # Wait for database server to be ready
   - export PGHOST=$${POSTGRES_HOST} PGPORT=$${POSTGRES_PORT}
-  - (t=20; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  - (t=30; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
   # Setup client 
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
@@ -68,10 +68,13 @@ steps:
   - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
   - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t $${image}
   # Prepare environment for tests
+  - mkdir data temp && chown -v 1000:1000 data temp
   - export env_file=nosetests-${CI_BUILD_NUMBER}.env
   - >-
     (env -i 
-    DATABASE=./ingest-tests.sqlite
+    DATABASE=/work/data/ingest-tests.sqlite
+    TEMPDIR=/work/temp
+    INSTANCE_PATH=/work/data
     POSTGIS_HOST=$${POSTGRES_HOST}
     POSTGIS_PORT=$${POSTGRES_PORT}
     POSTGIS_USER=$${POSTGRES_TEST_USER}
@@ -87,10 +90,7 @@ steps:
   # Run tests
   - export postgres_server_address=$(getent ahostsv4 $${POSTGRES_HOST} | awk '/\<STREAM\>/{print $1}' | head -n 1)
   - test -n "$${postgres_server_address}"
-  - >-
-    docker run --rm -u 1000:1000 --volume $PWD:/work --workdir /work --env-file $${env_file} 
-    --add-host $${POSTGRES_HOST}:$${postgres_server_address}
-    $${image} nosetests -v -s
+  - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --add-host $${POSTGRES_HOST}:$${postgres_server_address} $${image} -v -s
 
 #
 # Services

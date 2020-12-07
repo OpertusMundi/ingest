@@ -24,5 +24,11 @@ COPY setup.py requirements.txt requirements-testing.txt ./
 RUN pip3 install --upgrade pip && \
   pip3 install --no-cache-dir --prefix=/usr/local -r requirements.txt -r requirements-testing.txt
 
-ENV FLASK_APP="ingest" FLASK_ENV="testing" FLASK_DEBUG="false"
-ENV TEMPDIR="" SECRET_KEY_FILE="./secret_key" TLS_CERTIFICATE="" TLS_KEY=""
+ENV FLASK_APP="ingest" \
+    FLASK_ENV="testing" \
+    FLASK_DEBUG="false" \
+    TEMPDIR="" 
+
+COPY run-nosetests.sh /
+RUN chmod a+x /run-nosetests.sh
+ENTRYPOINT ["/run-nosetests.sh"]
