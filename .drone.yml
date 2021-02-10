@@ -101,6 +101,8 @@ services:
 - name: docker
   image: docker:19.03-dind
   privileged: true
+  command:
+  - --registry-mirror=http://registry-mirror:5000 
   volumes:
   - name: docker_socket
     path: /var/run
