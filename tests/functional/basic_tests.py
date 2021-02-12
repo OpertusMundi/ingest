@@ -1,10 +1,13 @@
 import logging
 import json
-from os import path
+from os import path, getenv
 from time import sleep
 from uuid import uuid4
+import fiona.errors
 
 from ingest.app import app
+from ingest.postgres import Postgres
+from ingest.app import _ingestIntoPostgis, _getWorkingPath
 
 # Setup/Teardown
 
@@ -19,6 +22,7 @@ def teardown_module():
     pass
 
 # Tests
+
 dirname = path.dirname(__file__)
 kml = path.join(dirname, '..', 'test_data', 'geo.kml')
 shapefile = path.join(dirname, '..', 'test_data', 'geo.zip')
@@ -39,6 +43,38 @@ def test_get_health_check():
             logging.error('The service is unhealthy: %(reason)s\n%(detail)s', r)
         logging.debug("From /_health: %s" % (r))
         assert r['status'] == 'OK'
+
+def test_postgres_1():
+    """Functional Test: Test checkIfTableExists"""
+    postgres = Postgres()
+    assert postgres.checkIfTableExists('spatial_ref_sys', schema="public")
+
+def test_postgres_2():
+    """Functional Test: Test KML ingest into PostGIS"""
+    postgres = Postgres()
+    schema, table, rows = postgres.ingest(kml, 'test_table', chunksize=1, commit=False)
+    assert schema == getenv('POSTGIS_DB_SCHEMA')
+    assert table == 'test_table'
+    assert rows == 3
+    assert not postgres.checkIfTableExists('test_table')
+
+def test_postgres_3():
+    """Functional Test: Test ingest with unsupported file type."""
+    postgres = Postgres()
+    try:
+        schema, table, rows = postgres.ingest(shapefile, 'test_table', commit=False)
+        assert False
+    except Exception as e:
+        assert isinstance(e, fiona.errors.DriverError)
+
+def test_postgres_4():
+    """Functional Test: Test ingest shapefile, uncompress and cleanup"""
+    result = _ingestIntoPostgis(shapefile, 'ticket')
+    assert 'schema' in result
+    assert 'table' in result
+    assert 'length' in result
+    assert result['length'] == 3
+    assert not path.isdir(_getWorkingPath('ticket'))
 
 def test_ingest_1():
     """Functional Test: Test KML ingest"""
