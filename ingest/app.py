@@ -47,6 +47,7 @@ def _checkConnectToPostgis():
 
 def _checkConnectToGeoserver():
     gs = Geoserver()
+    mainLogger.debug('_checkConnectToGeoserver(): Using REST API at %s' % (gs.rest_url))
     gs_url = gs.check()
     mainLogger.debug('_checkConnectToGeoserver(): Connected to %s' % (gs_url))
 

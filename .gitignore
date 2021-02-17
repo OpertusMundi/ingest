@@ -16,3 +16,4 @@ secrets/
 docker-compose.yml
 compose.yml
 compose-testing.yml
+netrc

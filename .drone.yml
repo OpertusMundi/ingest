@@ -5,14 +5,15 @@ type: docker
 name: default
 
 environment:
-  POSTGRES_HOST: 'postgis-1'
+  POSTGRES_HOST: postgis-1
   POSTGRES_PORT: '5432'
-  POSTGRES_TEST_DATABASE: ingest-tests
-  POSTGRES_TEST_USER: tester1
-  GEOSERVER_URL: 'http://geoserver-1'
-  GEOSERVER_WORKSPACE: 'default'
-  GEOSERVER_STORE: 'postgis-1'
-  GEOSERVER_TEST_USER: tester1
+  DATASTORE_DATABASE: ingest-tests
+  DATASTORE_USER: tester1
+  GEOSERVER_HOST: geoserver-1
+  GEOSERVER_PORT: '8080'
+  GEOSERVER_WORKSPACE: work_1
+  GEOSERVER_STORE: postgis-1
+  GEOSERVER_USER: tester1
 
 #
 # Steps
@@ -20,7 +21,7 @@ environment:
 
 steps:
 
-- name: setup-database
+- name: setup-postgis
   image: postgres:9.6-alpine
   when:
     event:
@@ -29,23 +30,51 @@ steps:
   environment:
     POSTGRES_PASSWORD:
       from_secret: postgres_password
-    POSTGRES_TEST_PASSWORD:
+    DATASTORE_PASSWORD:
       from_secret: postgres_test_password
   commands:
   # Wait for database server to be ready
   - export PGHOST=$${POSTGRES_HOST} PGPORT=$${POSTGRES_PORT}
-  - (t=30; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  - (t=30; while ! pg_isready -U postgres -t 5; do t=$((t - 1)); test $${t} -ne 0; sleep 3s; done)
   # Setup client 
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
   - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:postgres:$${POSTGRES_PASSWORD}" >> ~/.pgpass
-  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:$${POSTGRES_TEST_USER}:$${POSTGRES_TEST_PASSWORD}" >> ~/.pgpass
+  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:$${DATASTORE_USER}:$${DATASTORE_PASSWORD}" >> ~/.pgpass
   # Create user/database for tests
-  - echo "CREATE USER \"$${POSTGRES_TEST_USER}\" WITH PASSWORD '$${POSTGRES_TEST_PASSWORD}'" | psql -U postgres
-  - echo "CREATE DATABASE \"$${POSTGRES_TEST_DATABASE}\" WITH OWNER \"$${POSTGRES_TEST_USER}\"" | psql -U postgres
-  - echo "CREATE EXTENSION postgis" | psql -U postgres $${POSTGRES_TEST_DATABASE}
+  - echo "CREATE USER \"$${DATASTORE_USER}\" WITH PASSWORD '$${DATASTORE_PASSWORD}'" | psql -U postgres
+  - echo "CREATE DATABASE \"$${DATASTORE_DATABASE}\" WITH OWNER \"$${DATASTORE_USER}\"" | psql -U postgres
+  - echo "CREATE EXTENSION postgis" | psql -U postgres $${DATASTORE_DATABASE}
   - psql -U postgres -l -A -t
-  - psql -U $${POSTGRES_TEST_USER} -d $${POSTGRES_TEST_DATABASE} -A -t -c '\d'
+  - psql -U $${DATASTORE_USER} -d $${DATASTORE_DATABASE} -A -t -c '\d'
+
+- name: setup-geoserver
+  image: curlimages/curl:7.75.0
+  when:
+    event:
+    - push
+    - tag
+  environment:
+    GEOSERVER_PASSWORD:
+      from_secret: geoserver_test_password
+    GEOSERVER_ADMIN_PASSWORD:
+      from_secret: geoserver_admin_password
+    DATASTORE_PASSWORD:
+      from_secret: postgres_test_password
+  commands:
+  - export GEOSERVER_URL=http://$${GEOSERVER_HOST}:$${GEOSERVER_PORT}/geoserver
+  - echo "machine $${GEOSERVER_HOST} login admin password $${GEOSERVER_ADMIN_PASSWORD}" > ~/.netrc
+  - chmod u=rw,g=,o= ~/.netrc
+  - (t=30; sleep 20s; while ! curl -s -S -I $${GEOSERVER_URL}; do t=$((t - 1)); test $${t} -ne 0; sleep 3s; done)
+  - curl -s -S --netrc $${GEOSERVER_URL}/rest/about/version.xml | tee && echo
+  - curl -s -S --netrc $${GEOSERVER_URL}/rest/about/system-status.xml | tee && echo
+  - ./bin/geoserver-create-workspace.sh
+  - ./bin/geoserver-setup-datastore.sh
+  - curl -s -S --netrc $${GEOSERVER_URL}/rest/workspaces/$${GEOSERVER_WORKSPACE}/datastores.xml | tee && echo
+  - ./bin/geoserver-create-user-in-admin-group.sh
+  - curl -s -S --netrc $${GEOSERVER_URL}/rest/security/roles/user/$${GEOSERVER_USER}.xml | tee && echo
+  - ./bin/geoserver-grant-rest-access-to-admin-group.sh
+  - curl -s -S --netrc $${GEOSERVER_URL}/rest/security/acl/rest.xml | tee && echo
 
 - name: nosetests
   image: docker:19.03-dind
@@ -58,14 +87,14 @@ steps:
     path: /var/run
   environment:
     DOCKER_HOST: unix:///var/run/docker.sock
-    POSTGRES_TEST_PASSWORD:
+    DATASTORE_PASSWORD:
       from_secret: postgres_test_password
-    GEOSERVER_TEST_PASSWORD:
+    GEOSERVER_PASSWORD:
       from_secret: geoserver_test_password
   commands:
   # Build image for testing
   - export image=opertusmundi/ingest:${DRONE_COMMIT}-testing
-  - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1; done)
+  - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1s; done)
   - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t $${image}
   # Prepare environment for tests
   - mkdir data temp && chown -v 1000:1000 data temp
@@ -77,20 +106,18 @@ steps:
     INSTANCE_PATH=/work/data
     POSTGIS_HOST=$${POSTGRES_HOST}
     POSTGIS_PORT=$${POSTGRES_PORT}
-    POSTGIS_USER=$${POSTGRES_TEST_USER}
-    POSTGIS_PASS=$${POSTGRES_TEST_PASSWORD}
-    POSTGIS_DB_NAME=$${POSTGRES_TEST_DATABASE}
+    POSTGIS_USER=$${DATASTORE_USER}
+    POSTGIS_PASS=$${DATASTORE_PASSWORD}
+    POSTGIS_DB_NAME=$${DATASTORE_DATABASE}
     POSTGIS_DB_SCHEMA=public
-    GEOSERVER_URL=$${GEOSERVER_URL}
-    GEOSERVER_USER=$${GEOSERVER_TEST_USER}
-    GEOSERVER_PASS=$${GEOSERVER_TEST_PASSWORD}
+    GEOSERVER_URL=http://$${GEOSERVER_HOST}:$${GEOSERVER_PORT}/geoserver
+    GEOSERVER_USER=$${GEOSERVER_USER}
+    GEOSERVER_PASS=$${GEOSERVER_PASSWORD}
     GEOSERVER_WORKSPACE=$${GEOSERVER_WORKSPACE}
     GEOSERVER_STORE=$${GEOSERVER_STORE}
     ) | tee $${env_file}
   # Run tests
-  - export postgres_server_address=$(getent ahostsv4 $${POSTGRES_HOST} | awk '/\<STREAM\>/{print $1}' | head -n 1)
-  - test -n "$${postgres_server_address}"
-  - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --add-host $${POSTGRES_HOST}:$${postgres_server_address} $${image} -v -s
+  - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --network host $${image} -v -s
 
 #
 # Services
@@ -113,6 +140,17 @@ services:
     POSTGRES_PASSWORD:
       from_secret: postgres_password
 
+- name: geoserver-1
+  image: kartoza/geoserver:2.18.0
+  environment:
+    #GEOSERVER_DATA_DIR: /var/lib/geoserver/data
+    #GEOWEBCACHE_CACHE_DIR: /var/lib/geoserver/geowebcache-data
+    GEOSERVER_ADMIN_USER: admin
+    GEOSERVER_ADMIN_PASSWORD:
+      from_secret: geoserver_admin_password
+    INITIAL_MEMORY: '512M'
+    MAXIMUM_MEMORY: '2G'
+
 #
 # Volumes
 #
@@ -120,4 +158,3 @@ services:
 volumes:
 - name: docker_socket
   temp: {}
-
