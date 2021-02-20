@@ -119,6 +119,24 @@ steps:
   # Run tests
   - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --network host $${image} -v -s
 
+- name: publish-image-1
+  image: plugins/docker
+  when:
+    event:
+    - tag
+  settings:
+    debug: true
+    username: 
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    repo: opertusmundi/ingest
+    mirror: http://registry-mirror:5000
+    tags:
+    - ${DRONE_TAG}
+    build_args:
+    - VERSION=${DRONE_TAG}
+
 #
 # Services
 #
