@@ -42,7 +42,7 @@ class Postgres(object):
             exists = cur.fetchone()[0]
         return exists
 
-    def ingest(self, file, table, schema=None, chunksize=100000, commit=True):
+    def ingest(self, file, table, schema=None, chunksize=100000, commit=True, replace=False):
         """Creates a DB table and ingests a vector file into it.
 
         It reads a vector file with geopandas (fiona) and writes the attributes into a database table.
@@ -84,7 +84,7 @@ class Postgres(object):
                             gtype = gtype[0]
                         else:
                             gtype = 'GEOMETRY'
-                        if_exists = 'fail'
+                        if_exists = 'fail' if not replace else 'replace'
                     else:
                         if_exists = 'append'
                     df.drop('geometry', 1, inplace=True)

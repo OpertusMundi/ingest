@@ -14,6 +14,7 @@ from apispec_webframeworks.flask import FlaskPlugin
 import zipfile
 import tarfile
 import json
+import distutils
 from . import db
 from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
@@ -62,7 +63,7 @@ def _executorCallback(future):
         dbc.commit()
         accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
-def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None):
+def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=False):
     """Ingest file content to PostgreSQL and publish to geoserver.
     Parameters:
         src_file (string): Full path to source file.
@@ -92,9 +93,9 @@ def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None):
     postgres = Postgres()
     if environ['FLASK_ENV'] == 'testing':
         # If environment is testing, do not commit
-        result = postgres.ingest(src_file, tablename, schema=schema, commit=False)
+        result = postgres.ingest(src_file, tablename, schema=schema, commit=False, replace=replace)
     else:
-        result = postgres.ingest(src_file, tablename, schema=schema)
+        result = postgres.ingest(src_file, tablename, schema=schema, replace=replace)
     try:
         rmtree(working_path)
     except Exception as e:
@@ -357,6 +358,10 @@ def ingest():
                 schema:
                   type: string
                   description: The schema in which the table will be created (schema has to exist). If not given, the default schema will be used.
+                replace:
+                  type: boolean
+                  description: If true, the table will be replace if exists.
+                  default: false
               required:
                 - resource
       responses:
@@ -417,12 +422,17 @@ def ingest():
         return make_response("Parameter 'response' can take one of: 'prompt', 'deferred'", 400)
     tablename = request.values.get('tablename')
     schema = request.values.get('schema')
+    replace = request.values.get('replace') or 'false'
+    try:
+        replace = distutils.util.strtobool(replace)
+    except ValueError:
+        return make_response("replace field is boolean.", 400)
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
         src_file = path.join(environ['INPUT_DIR'], request.values.get('resource'))
         if not path.isfile(src_file) and not path.isdir(src_file):
-          return make_response({"Error": "resource does not exist."}, 400)
+            return make_response({"Error": "resource does not exist."}, 400)
     else:
         resource = request.files['resource']
         if resource is None:
@@ -439,7 +449,7 @@ def ingest():
     if response == 'prompt':
         g.response_type = 'prompt'
         try:
-            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema)
+            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema, replace=replace)
         except Exception as e:
             if isinstance(e, SchemaException):
                 return make_response(str(e), 400)
@@ -450,7 +460,7 @@ def ingest():
         return make_response({**result, "type": response}, 200)
     else:
         g.response_type = 'deferred'
-        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema)
+        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema, replace=replace)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": response}, 202)
 
 @app.route("/publish", methods=["POST"])
