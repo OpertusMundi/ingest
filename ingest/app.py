@@ -133,7 +133,7 @@ def _publishTable(table, schema=None, workspace=None):
 # Read (required) environment parameters
 for variable in [
     'POSTGIS_HOST', 'POSTGIS_USER', 'POSTGIS_PASS', 'POSTGIS_PORT', 'POSTGIS_DB_NAME', 'POSTGIS_DB_SCHEMA',
-    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_STORE'
+    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_STORE', 'INPUT_DIR'
 ]:
     value = getenv(variable)
     if value is None:
@@ -420,7 +420,9 @@ def ingest():
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
-        src_file = request.values.get('resource')
+        src_file = path.join(environ['INPUT_DIR'], request.values.get('resource'))
+        if not path.isfile(src_file) and not path.isdir(src_file):
+          return make_response({"Error": "resource does not exist."}, 400)
     else:
         resource = request.files['resource']
         if resource is None:

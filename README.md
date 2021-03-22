@@ -40,6 +40,7 @@ The following environment variables should be set:
 - `CORS`: List or string of allowed origins
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
 - `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
+- `INPUT_DIR`: The location of the input files.
 
 A development server could be started with:
 ```

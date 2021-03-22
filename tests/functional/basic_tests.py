@@ -79,7 +79,7 @@ def test_postgres_4():
 def test_ingest_1():
     """Functional Test: Test KML ingest"""
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource=kml))
+        res = client.post('/ingest', data=dict(resource='test_data/geo.kml'))
         assert res.status_code == 200
         r = res.get_json()
         assert r.get('schema') is not None
@@ -89,7 +89,7 @@ def test_ingest_1():
 def test_ingest_2():
     """Functional Test: Test Shapefile ingest; streaming resource"""
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource=shapefile))
+        res = client.post('/ingest', data=dict(resource='test_data/geo.zip'))
         assert res.status_code == 200
         r = res.get_json()
         assert r.get('schema') is not None

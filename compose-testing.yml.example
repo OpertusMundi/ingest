@@ -13,24 +13,24 @@ services:
       dockerfile: testing.dockerfile
       args:
         VERSION: "${VERSION}"
-    
+
     command: ['-v']
-    
+
     volumes:
     - type: 'bind'
       source: .
       target: '/work'
-    
+
     working_dir: /work
     user: "1000:1000"
-    
+
     networks:
-    - 'opertusmundi_network'  
-    
+    - 'opertusmundi_network'
+
     environment:
       TEMPDIR: '/work/temp'
       INSTANCE_PATH: '/work/data'
-      DATABASE: '/work/data/ingest-testing.sqlite'      
+      DATABASE: '/work/data/ingest-testing.sqlite'
       POSTGIS_HOST: 'postgres-1-opertusmundi'
       POSTGIS_PORT: '5432'
       POSTGIS_USER: 'ingest'
@@ -42,8 +42,9 @@ services:
       GEOSERVER_WORKSPACE: 'default'
       GEOSERVER_STORE: 'postgres-1'
       GEOSERVER_PASS_FILE: '/work/secrets/geoserver/password'
- 
+      INPUT_DIR: '/work/tests'
+
 networks:
-  opertusmundi_network: 
+  opertusmundi_network:
     external: true
 
