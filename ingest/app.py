@@ -338,6 +338,10 @@ def ingest():
                 schema:
                   type: string
                   description: The schema in which the table will be created (it has to exist). If not given, the default schema will be used.
+                replace:
+                  type: boolean
+                  description: If true, the table will be replace if exists.
+                  default: false
               required:
                 - resource
           application/x-www-form-urlencoded:
