@@ -36,11 +36,11 @@ The following environment variables should be set:
 - `GEOSERVER_STORE`: GeoServer PostGIS data store name. It will be created if not exists.
 - `GEOSERVER_USER`: GeoServer user name.
 - `GEOSERVER_PASS`: The password for the GeoServer user.
-- `TEMPDIR` (optional): The location for storing temporary files. If not set, the system temporary path location will be used.
+- `TEMP_DIR` (optional): The location for storing temporary files. If not set, the system temporary path location will be used.
 - `CORS`: List or string of allowed origins
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
 - `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
-- `INPUT_DIR`: The location of the input files.
+- `INPUT_DIR`: The input directory; all input paths will be resolved under this directory. 
 
 A development server could be started with:
 ```
@@ -82,6 +82,7 @@ Prepare the following files/directories:
    * `./secrets/geoserver/password`: file containing the password for the Geoserver user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
+   * `./input`: a directory to be used as the root of input files
 
 Start application:
 
@@ -91,6 +92,10 @@ Start application:
 ## Run tests
 
 Copy `compose-testing.yml.example` to `compose-testing.yml` and adjust to your needs. This is a just a docker-compose recipe for setting up the testing container.
+
+Build testing container:
+
+    docker-compose -f compose-testing.yml build
 
 Run nosetests (in an ephemeral container):
 

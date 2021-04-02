@@ -22,7 +22,7 @@ RUN pip3 install --upgrade pip && \
 ENV FLASK_APP="ingest" \
     FLASK_ENV="testing" \
     FLASK_DEBUG="false" \
-    TEMPDIR="" 
+    TEMP_DIR="" 
 
 COPY run-nosetests.sh /
 RUN chmod a+x /run-nosetests.sh

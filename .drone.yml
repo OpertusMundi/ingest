@@ -97,12 +97,13 @@ steps:
   - (t=10; while ! docker info -f '{{.ID}}' 2>/dev/null; do t=$((t - 1)); test $${t} -ne 0; sleep 1s; done)
   - docker build . -f testing.dockerfile --build-arg VERSION=${DRONE_COMMIT} -t $${image}
   # Prepare environment for tests
-  - mkdir data temp && chown -v 1000:1000 data temp
+  - mkdir -v data temp && chown -v 1000:1000 data temp 
   - export env_file=nosetests-${CI_BUILD_NUMBER}.env
   - >-
     (env -i 
     DATABASE=/work/data/ingest-tests.sqlite
-    TEMPDIR=/work/temp
+    TEMP_DIR=/work/temp
+    INPUT_DIR=/work/tests/test_data
     INSTANCE_PATH=/work/data
     POSTGIS_HOST=$${POSTGRES_HOST}
     POSTGIS_PORT=$${POSTGRES_PORT}

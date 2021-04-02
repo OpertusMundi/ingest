@@ -14,7 +14,8 @@ from apispec_webframeworks.flask import FlaskPlugin
 import zipfile
 import tarfile
 import json
-import distutils
+import distutils.util
+
 from . import db
 from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
@@ -31,7 +32,7 @@ def _makeDir(path):
 
 def _getTempDir():
     """Return the temporary directory"""
-    return getenv('TEMPDIR') or tempfile.gettempdir()
+    return getenv('TEMP_DIR') or tempfile.gettempdir()
 
 def _getWorkingPath(ticket):
     """Returns the working directory for each request."""
@@ -176,13 +177,15 @@ if getenv('CORS') is not None:
     cors = CORS(app, origins=origins)
 
 @executor.job
-def enqueue(src_file, ticket, schema=None, tablename=None):
+def enqueue(src_file, ticket, schema=None, tablename=None, replace=None):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
+    mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
+
     dbc = db.get_db()
     dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
     dbc.commit()
     try:
-        result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename)
+        result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename, replace=replace)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     rows = result.pop('length')
@@ -434,14 +437,17 @@ def ingest():
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
-        src_file = path.join(environ['INPUT_DIR'], request.values.get('resource'))
+        resource_path = request.values.get('resource')
+        src_file = path.join(environ['INPUT_DIR'], resource_path)
         if not path.isfile(src_file) and not path.isdir(src_file):
-            return make_response({"Error": "resource does not exist."}, 400)
+            mainLogger.info('Client error: resource file [%s] not found under input directory [%s]', 
+                resource_path, environ['INPUT_DIR'])
+            return make_response({"Error": "resource file not found."}, 400)
     else:
         resource = request.files['resource']
         if resource is None:
-            mainLogger.info('Client error: %s', 'Resource not uploaded')
-            return make_response({"Error": "Resource not uploaded."}, 400)
+            mainLogger.info('Client error: %s', 'resource not uploaded')
+            return make_response({"Error": "resource not uploaded."}, 400)
 
         # Create tmp directory and store the uploaded file.
         working_path = _getWorkingPath(ticket)

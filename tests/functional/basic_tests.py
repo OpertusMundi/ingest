@@ -79,7 +79,7 @@ def test_postgres_4():
 def test_ingest_1():
     """Functional Test: Test KML ingest"""
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource='test_data/geo.kml'))
+        res = client.post('/ingest', data=dict(resource='geo.kml'))
         assert res.status_code == 200
         r = res.get_json()
         assert r.get('schema') is not None
@@ -89,7 +89,7 @@ def test_ingest_1():
 def test_ingest_2():
     """Functional Test: Test Shapefile ingest; streaming resource"""
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource='test_data/geo.zip'))
+        res = client.post('/ingest', data=dict(resource='geo.zip'))
         assert res.status_code == 200
         r = res.get_json()
         assert r.get('schema') is not None
@@ -113,7 +113,7 @@ def test_ingest_3():
         assert ticket is not None
         assert endpoint is not None
         assert r.get('type') == 'deferred'
-    sleep(0.5)
+    sleep(1.0)
     with app.test_client() as client:
         res = client.get(endpoint)
         assert res.status_code == 200
@@ -123,7 +123,6 @@ def test_ingest_3():
         assert r.get('executionTime') is not None
         assert r.get('requested') is not None
         assert r.get('success') is not None
-
         res = client.get('/ticket_by_key/%s' % (idempotency_key))
         assert res.status_code == 200
         r = res.get_json()
