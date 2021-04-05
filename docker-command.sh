@@ -39,7 +39,8 @@ if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
 fi
 
 export FLASK_APP="ingest"
-export DATABASE="./ingest.sqlite"
+test -z "${DATABASE}" && DATABASE="./data/ingest.sqlite"
+export DATABASE
 export SECRET_KEY="$(cat ${SECRET_KEY_FILE})"
 export POSTGIS_PASS="$(cat ${POSTGIS_PASS_FILE})"
 export GEOSERVER_PASS="$(cat ${GEOSERVER_PASS_FILE})"
