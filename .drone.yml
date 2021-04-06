@@ -120,6 +120,17 @@ steps:
   # Run tests
   - docker run --rm -u 1000:1000 -v $PWD:/work -w /work --env-file $${env_file} --network host $${image} -v -s
 
+- name: prepare-tags
+  image: busybox:1.32
+  when:
+    event:
+    - tag
+  commands:
+  - tags_file=$(mktemp) 
+  - echo ${DRONE_TAG} >> $${tags_file}
+  - echo ${DRONE_TAG} | grep -o -e '^[0-9]\+[.][0-9]\+[.][0-9]\+' >> $${tags_file}
+  - cat $${tags_file} | xargs echo | tr '[:blank:]' ',' | tr -d '\n' | tee .tags && echo
+
 - name: publish-image-1
   image: plugins/docker
   when:
@@ -133,8 +144,6 @@ steps:
       from_secret: docker_password
     repo: opertusmundi/ingest
     mirror: http://registry-mirror:5000
-    tags:
-    - ${DRONE_TAG}
     build_args:
     - VERSION=${DRONE_TAG}
 
@@ -152,8 +161,6 @@ steps:
     repo: registry-dev-1-opertusmundi:30474/opertusmundi/ingest
     mirror: http://registry-mirror:5000
     registry: registry-dev-1-opertusmundi:30474
-    tags:
-    - ${DRONE_TAG}
     build_args:
     - VERSION=${DRONE_TAG}
 
