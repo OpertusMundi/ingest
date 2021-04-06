@@ -25,12 +25,13 @@ flask init-db
 The following environment variables should be set:
 - `FLASK_ENV`: `development` or `production`.
 - `FLASK_APP`: `ingest` (if running as a container, this will be always set).
-- `POSTGIS_HOST`: PostgreSQL Host Server.
-- `POSTGIS_PORT`: PostgreSQL Port.
-- `POSTGIS_DB_NAME`: PostgreSQL database to use.
-- `POSTGIS_DB_SCHEMA`: PostgreSQL active schema.
-- `POSTGIS_USER`: PostgreSQL user name.
-- `POSTGIS_PASS`: The password for the PostgreSQL user.
+- `DATABASE`: (optional) The path to the SQLite database holding state of this microservice (default is `.data/ingest.sqlite`). 
+- `POSTGIS_HOST`: The PostGIS host to use for ingesting spatial datasets.
+- `POSTGIS_PORT`: The PostGIS host.
+- `POSTGIS_DB_NAME`: The database to use on the PostGIS server.
+- `POSTGIS_DB_SCHEMA`: The table schema to use on the PostGIS database.
+- `POSTGIS_USER`: The username for the PostGIS user.
+- `POSTGIS_PASS`: The password for the PostGIS user.
 - `GEOSERVER_URL`: GeoServer base URL.
 - `GEOSERVER_WORKSPACE` (optional): GeoServer workspace to use. It will be created if not exists. If not set, the default workspace will be used instead.
 - `GEOSERVER_STORE`: GeoServer PostGIS data store name. It will be created if not exists.
@@ -78,8 +79,8 @@ Prepare the following files/directories:
 
    * `./data/ingest.sqlite`:  the SQLite database (an empty database, if running for first time)
    * `./secrets/secret_key`: file needed (by Flask) for signing/encrypting session data
-   * `./secrets/postgis/password`: file containing the password for the PostGIS database user
-   * `./secrets/geoserver/password`: file containing the password for the Geoserver user
+   * `./secrets/postgis/ingest-password`: file containing the password for the PostGIS database user
+   * `./secrets/geoserver/ingest-password`: file containing the password for the Geoserver user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
    * `./input`: a directory to be used as the root of input files
