@@ -32,8 +32,8 @@ services:
     - type: 'bind'
       source: './temp'
       target: '/tmp'
-    - type: 'bind'
-      source: './input'
+    - type: 'volume'
+      source: 'input'
       target: '/var/local/ingest/input'
       read_only: true
     networks:
@@ -58,6 +58,11 @@ services:
       GEOSERVER_PASS_FILE: '/secrets/geoserver/ingest-password'
       LOGGING_ROOT_LEVEL: 'INFO'
       INPUT_DIR: '/var/local/ingest/input'
+
+volumes:
+  input:
+    external: true
+    name: opertusmundi_ingest_input
 
 networks:
   opertusmundi_network:
