@@ -22,24 +22,31 @@ RUN addgroup flask && adduser -h /var/local/ingest -D -G flask flask
 COPY --from=build-stage-1 /usr/local/ /usr/local/
 
 RUN mkdir /usr/local/ingest/
-COPY setup.py requirements.txt requirements-production.txt /usr/local/ingest/
-COPY ingest /usr/local/ingest/ingest
 
-RUN pip3 install --upgrade pip && \
-  (cd /usr/local/ingest && pip3 install --no-cache-dir --prefix=/usr/local -r requirements.txt -r requirements-production.txt)
+WORKDIR /usr/local/ingest
+
+COPY setup.py requirements.txt requirements-production.txt /usr/local/ingest/
+RUN pip3 install --upgrade pip \
+  && pip3 install --no-cache-dir --prefix=/usr/local -r requirements.txt -r requirements-production.txt
+
+COPY ingest /usr/local/ingest/ingest
 RUN cd /usr/local/ingest && python setup.py install --prefix=/usr/local && python setup.py clean -a
 
 COPY wsgi.py docker-command.sh /usr/local/bin/
 RUN chmod a+x /usr/local/bin/wsgi.py /usr/local/bin/docker-command.sh
 
 WORKDIR /var/local/ingest
+
 RUN mkdir ./logs && chown flask:flask ./logs
 COPY --chown=flask logging.conf .
 
 ENV FLASK_APP="ingest" \
     FLASK_ENV="production" \
     FLASK_DEBUG="false" \
+    LOGGING_FILE_CONFIG="logging.conf" \
+    LOGGING_ROOT_LEVEL="" \
     INSTANCE_PATH="/var/local/ingest/data" \
+    DATA_DIR="/var/local/ingest/data" \
     TEMP_DIR="" \
     INPUT_DIR="/var/local/ingest/input" \
     SECRET_KEY_FILE="/var/local/ingest/secret_key" \

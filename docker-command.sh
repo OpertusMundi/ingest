@@ -1,6 +1,7 @@
 #!/bin/sh
-#set -x
-set -e
+set -u -e -o pipefail
+
+[[ "${DEBUG:-f}" != "f" || "${XTRACE:-f}" != "f" ]] && set -x
 
 # Check environment
 
@@ -29,21 +30,24 @@ if [ ! -f "${GEOSERVER_PASS_FILE}" ]; then
     echo "GEOSERVER_PASS_FILE does not exist!" 1>&2 && exit 1
 fi
 
-export LOGGING_FILE_CONFIG="./logging.conf"
 if [ ! -f "${LOGGING_FILE_CONFIG}" ]; then
-    echo "LOGGING_FILE_CONFIG (configuration for Python logging) does not exist!" 1>&2 && exit 1
+    echo "LOGGING_FILE_CONFIG (configuration for Python logging) does not exist!" 1>&2
+    exit 1
 fi
 
+logging_file_config=${LOGGING_FILE_CONFIG}
+
 if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
-    sed -i -e "/^\[logger_root\]/,/^\[.*/ { s/^level=.*/level=${LOGGING_ROOT_LEVEL}/ }" ${LOGGING_FILE_CONFIG}    
+    logging_file_config=$(mktemp logging-XXXXXXXX.conf)
+    sed -e "/^\[logger_root\]/,/^\[.*/ { s/^level=.*/level=${LOGGING_ROOT_LEVEL}/ }" ${LOGGING_FILE_CONFIG} \
+        > ${logging_file_config}
 fi
 
 export FLASK_APP="ingest"
-test -z "${DATABASE}" && DATABASE="./data/ingest.sqlite"
-export DATABASE
-export SECRET_KEY="$(cat ${SECRET_KEY_FILE})"
-export POSTGIS_PASS="$(cat ${POSTGIS_PASS_FILE})"
-export GEOSERVER_PASS="$(cat ${GEOSERVER_PASS_FILE})"
+export DATABASE="./data/ingest.sqlite"
+export SECRET_KEY="$(cat ${SECRET_KEY_FILE} | tr -d '\n')"
+export POSTGIS_PASS="$(cat ${POSTGIS_PASS_FILE} | tr -d '\n')"
+export GEOSERVER_PASS="$(cat ${GEOSERVER_PASS_FILE} | tr -d '\n')"
 
 # Initialize database
 
@@ -64,7 +68,7 @@ if [ -n "${TLS_CERTIFICATE}" ] && [ -n "${TLS_KEY}" ]; then
     server_port="5443"
 fi
 
-exec gunicorn --log-config ${LOGGING_FILE_CONFIG} --access-logfile - \
+exec gunicorn --log-config ${logging_file_config} --access-logfile - \
   --workers ${num_workers} \
   --bind "0.0.0.0:${server_port}" ${gunicorn_ssl_options} \
   ingest.app:app

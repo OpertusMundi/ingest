@@ -12,29 +12,33 @@ services:
         VERSION: "${VERSION}"
     volumes:
     - type: 'bind'
-      source: './logs'
-      target: '/var/local/ingest/logs'
+      source: ./logs
+      target: /var/local/ingest/logs
+    #- type: 'bind'
+    #  source: ./logging-syslog.conf
+    #  target: /var/local/ingest/logging.conf
+    #  read_only: true
     - type: 'bind'
-      source: './secrets/secret_key'
-      target: '/secrets/secret_key'
+      source: ./secrets/secret_key
+      target: /secrets/secret_key
       read_only: true
     - type: 'bind'
-      source: './secrets/postgis/ingest-password'
-      target: '/secrets/postgis/ingest-password'
+      source: ./secrets/postgis/ingest-password
+      target: /secrets/postgis/ingest-password
       read_only: true
     - type: 'bind'
-      source: './secrets/geoserver/ingest-password'
-      target: '/secrets/geoserver/ingest-password'
+      source: ./secrets/geoserver/ingest-password
+      target: /secrets/geoserver/ingest-password
       read_only: true
     - type: 'bind'
-      source: './data/'
-      target: '/var/local/ingest/data'
+      source: ./data/
+      target: /var/local/ingest/data
     - type: 'bind'
       source: './temp'
-      target: '/tmp'
+      target: /var/local/ingest/temp
     - type: 'volume'
       source: 'input'
-      target: '/var/local/ingest/input'
+      target: /var/local/ingest/input
       read_only: true
     networks:
     - 'opertusmundi_network'
@@ -44,20 +48,24 @@ services:
       FLASK_ENV: "${FLASK_ENV}"
       FLASK_DEBUG: "${FLASK_DEBUG}"
       CORS: '*'
-      SECRET_KEY_FILE: '/secrets/secret_key'
+      SECRET_KEY_FILE: /secrets/secret_key
       POSTGIS_HOST: 'postgres-1-opertusmundi'
       POSTGIS_PORT: '5432'
       POSTGIS_USER: 'ingest'
       POSTGIS_DB_NAME: 'geodata'
       POSTGIS_DB_SCHEMA: 'public'
-      POSTGIS_PASS_FILE: '/secrets/postgis/ingest-password'
+      POSTGIS_PASS_FILE: /secrets/postgis/ingest-password
       GEOSERVER_URL: 'http://geoserver-1-opertusmundi:8080/geoserver'
       GEOSERVER_USER: 'ingest'
       GEOSERVER_WORKSPACE: 'work_1'
       GEOSERVER_STORE: 'postgres-1'
-      GEOSERVER_PASS_FILE: '/secrets/geoserver/ingest-password'
-      LOGGING_ROOT_LEVEL: 'INFO'
-      INPUT_DIR: '/var/local/ingest/input'
+      GEOSERVER_PASS_FILE: /secrets/geoserver/ingest-password
+      #LOGGING_FILE_CONFIG: 'logging.conf'
+      #LOGGING_ROOT_LEVEL: 'INFO'
+      #RSYSLOG_HOST: rsyslog-1
+      TZ: Europe/Athens
+      INPUT_DIR: /var/local/ingest/input
+      TEMP_DIR: /var/local/ingest/temp
 
 volumes:
   input:
