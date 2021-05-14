@@ -38,7 +38,7 @@ fi
 logging_file_config=${LOGGING_FILE_CONFIG}
 
 if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
-    logging_file_config=$(mktemp logging-XXXXXXXX.conf)
+    logging_file_config="logging-$(echo ${HOSTNAME}| md5sum| head -c10).conf"
     sed -e "/^\[logger_root\]/,/^\[.*/ { s/^level=.*/level=${LOGGING_ROOT_LEVEL}/ }" ${LOGGING_FILE_CONFIG} \
         > ${logging_file_config}
 fi
