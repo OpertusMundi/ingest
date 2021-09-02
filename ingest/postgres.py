@@ -73,7 +73,8 @@ class Postgres(object):
                         eof = True
                         continue
                     rows = rows + length
-                    srid = df.crs.to_epsg()
+                    srid = 4326 if df.crs is None else df.crs.to_epsg()
+
                     if extension == '.kml':
                         df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y: (x, y), polygon))
                     df['geom'] = df['geometry'].apply(lambda x: WKTElement(x.wkt, srid=srid))
