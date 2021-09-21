@@ -76,6 +76,23 @@ class Geoserver(object):
         if http_code > 299:
             raise Exception('GeoServer POST: %s\n%s\nresponse code: %i' % (endpoint, xml, http_code))
 
+    def _delete(self, endpoint):
+        """DELETE request to GeoServer.
+        Parameters:
+            endpoint (str): The relative (to REST url) endpoint for the request.
+        Raises:
+            Exception: In case HTTP code is other than 2**
+        """
+        conn = pycurl.Curl()
+        conn.setopt(pycurl.USERPWD, "%s:%s" % (self.username, self.password))
+        conn.setopt(conn.URL, "%s/%s" % (self.rest_url, endpoint))
+        conn.setopt(pycurl.CUSTOMREQUEST, "DELETE")
+        conn.perform()
+        http_code = conn.getinfo(pycurl.HTTP_CODE)
+        conn.close()
+        if http_code > 299:
+            raise Exception('GeoServer DELETE: %s response code: %i' % (endpoint, http_code))
+
     def check(self):
         """Checks connection to GeoServer REST API.
         Raises:
@@ -148,3 +165,9 @@ class Geoserver(object):
         layer_xml = "<featureType><name>{0}</name></featureType>".format(table)
         endpoint = 'workspaces/{0}/datastores/{1}/featuretypes'.format(workspace, store)
         self._post(endpoint, layer_xml)
+
+    def unpublish(self, layer, store, workspace='default'):
+        if self.checkIfLayersExists(workspace, layer):
+            self._delete("layers/{workspace}:{layer}.xml".format(workspace=workspace, layer=layer))
+            endpoint = 'workspaces/{0}/datastores/{1}/featuretypes/{2}.xml'.format(workspace, store, layer)
+            self._delete(endpoint)

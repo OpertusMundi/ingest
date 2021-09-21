@@ -448,7 +448,7 @@ def ingest():
         resource_path = request.values.get('resource')
         src_file = path.join(environ['INPUT_DIR'], resource_path)
         if not path.isfile(src_file) and not path.isdir(src_file):
-            mainLogger.info('Client error: resource file [%s] not found under input directory [%s]', 
+            mainLogger.info('Client error: resource file [%s] not found under input directory [%s]',
                 resource_path, environ['INPUT_DIR'])
             return make_response({"Error": "resource file not found."}, 400)
     else:
@@ -549,6 +549,73 @@ def publish():
     except Exception as e:
         return make_response(str(e), 500)
     return make_response(endpoints, 200)
+
+@app.route("/ingest/<table>", methods=["DELETE"])
+def drop(table):
+    """Remove all ingested data relative to the given table.
+    ---
+    delete:
+      summary: Remove all ingested data relative to the given table.
+      description: Unpublishes the corresponding layer from GeoServer and drops the database table.
+      tags:
+        - Ingest
+      parameters:
+        - name: schema
+          in: path
+          description: The database schema; if not present the default schema will be assumed.
+          required: false
+          schema:
+            type: string
+        - name: workspace
+          in: path
+          description: The workspace that the layer belongs; if not present, the default workspace will be assumed.
+          required: false
+          schema:
+            type: string
+      responses:
+        204:
+          description: Table dropped (if existed).
+    """
+    store = getenv('GEOSERVER_STORE')
+    schema = request.values.get('schema') or getenv('POSTGIS_DB_SCHEMA')
+    workspace = request.values.get('workspace') or getenv('GEOSERVER_WORKSPACE')
+    try:
+        postgres = Postgres(schema=schema)
+        geoserver = Geoserver()
+        geoserver.unpublish(table, store, workspace=workspace)
+        postgres.drop(table)
+    except Exception as e:
+        return make_response(str(e), 500)
+    return '', 204
+
+@app.route("/publish/<layer>", methods=["DELETE"])
+def unpublish(layer):
+    """Unpublish a GeoServer layer.
+    ---
+    delete:
+      summary: Unpublish a GeoServer layer.
+      description: Removes both the layer and feature type from GeoServer.
+      tags:
+        - Publish
+      parameters:
+        - name: workspace
+          in: path
+          description: The workspace that the layer belongs; if not present, the default workspace will be assumed.
+          required: false
+          schema:
+            type: string
+      responses:
+        204:
+          description: Layer unpulished (if existed).
+    """
+    store = getenv('GEOSERVER_STORE')
+    workspace = request.values.get('workspace') or getenv('GEOSERVER_WORKSPACE')
+    geoserver = Geoserver()
+    try:
+        geoserver.unpublish(layer, store, workspace=workspace)
+    except Exception as e:
+        return make_response(str(e), 500)
+    return '', 204
 
 @app.route("/status/<ticket>")
 def status(ticket):
@@ -696,3 +763,5 @@ with app.test_request_context():
     spec.path(view=result)
     spec.path(view=health_check)
     spec.path(view=get_ticket)
+    spec.path(view=drop)
+    spec.path(view=unpublish)

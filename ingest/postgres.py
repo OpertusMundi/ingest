@@ -31,16 +31,41 @@ class Postgres(object):
         self.schema = schema
 
     def check(self):
+        """Check database engine connection.
+
+        Returns:
+            (str) Engine URI
+        """
         with self.engine.connect() as con:
             con.execute('SELECT 1')
         return self.engine.url
 
     def checkIfTableExists(self, table, schema=None):
+        """Check if table exists.
+
+        Parameters:
+            table (str): Table name
+            schema (str, optional): Database schema
+
+        Returns:
+            (bool) True if table exists; False otherwise.
+        """
         schema = schema or self.schema
         with self.engine.connect() as con:
             cur = con.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s');" % (schema, table))
             exists = cur.fetchone()[0]
         return exists
+
+    def drop(self, table, schema=None):
+        """Drop the selected table.
+
+        Parameters:
+            table (str): Table name
+            schema (str, optional): Database schema.
+        """
+        schema = schema or self.schema
+        with self.engine.connect() as con:
+            cur = con.execute('DROP TABLE IF EXISTS "%s"."%s"' % (schema, table))
 
     def ingest(self, file, table, schema=None, chunksize=100000, commit=True, replace=False):
         """Creates a DB table and ingests a vector file into it.
