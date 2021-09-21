@@ -20,6 +20,7 @@ from . import db
 from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
 from .logging import getLoggers
+from .forms import IngestForm, PublishForm
 
 mainLogger, accountLogger = getLoggers()
 
@@ -440,7 +441,18 @@ def ingest():
                 ticket: '$response.body#/ticket'
               description: The `ticket` value returned in the response can be used as the `ticket` parameter in `GET /status/{ticket}`.
         400:
-          description: General client error or database schema does not exist.
+          description: Form validation error or database schema does not exist.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: The key is the request body key.
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+                    description: Description of validation error.
+                example: {crs: [Field must be a valid CRS.]}
         403:
           description: Insufficient privilege for writing in the database schema.
     """
@@ -448,33 +460,23 @@ def ingest():
     # Create a unique ticket for the request
     ticket = g.ticket
 
-    # Get and validate arguments
-    response = request.values.get('response') or 'prompt'
-    if response != 'prompt' and response != 'deferred':
-        mainLogger.info('Client error: %s', "Wrong value for parameter 'response'")
-        return make_response("Parameter 'response' can take one of: 'prompt', 'deferred'", 400)
-    tablename = request.values.get('tablename')
-    schema = request.values.get('schema')
-    replace = request.values.get('replace') or 'false'
-    try:
-        replace = distutils.util.strtobool(replace)
-    except ValueError:
-        return make_response("replace field is boolean.", 400)
-    read_options = {opt: request.values.get(opt) for opt in ['encoding', 'crs'] if request.values.get(opt) is not None}
+    form = IngestForm(**request.form)
+    if not form.validate():
+        return make_response(form.errors, 400)
+    replace = distutils.util.strtobool(form.replace)
+    read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
-        resource_path = request.values.get('resource')
-        src_file = path.join(environ['INPUT_DIR'], resource_path)
-        if not path.isfile(src_file) and not path.isdir(src_file):
-            mainLogger.info('Client error: resource file [%s] not found under input directory [%s]',
-                resource_path, environ['INPUT_DIR'])
-            return make_response({"Error": "resource file not found."}, 400)
+        src_file = path.join(environ['INPUT_DIR'], form.resource)
     else:
-        resource = request.files['resource']
+        try:
+            resource = request.files['resource']
+        except KeyError:
+            return make_response({'resource' : ['Field is required.']}, 400)
         if resource is None:
             mainLogger.info('Client error: %s', 'resource not uploaded')
-            return make_response({"Error": "resource not uploaded."}, 400)
+            return make_response({'resource': ["Not uploaded."]}, 400)
 
         # Create tmp directory and store the uploaded file.
         working_path = _getWorkingPath(ticket)
@@ -483,21 +485,21 @@ def ingest():
         src_file = path.join(src_path, secure_filename(resource.filename))
         resource.save(src_file)
 
-    if response == 'prompt':
+    if form.response == 'prompt':
         g.response_type = 'prompt'
         try:
-            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema, replace=replace, **read_options)
+            result = _ingestIntoPostgis(src_file, ticket, tablename=form.tablename, schema=form.schema, replace=replace, **read_options)
         except Exception as e:
             if isinstance(e, SchemaException):
-                return make_response(str(e), 400)
+                return make_response({'schema': [str(e)]}, 400)
             elif isinstance(e, InsufficientPrivilege):
                 return make_response(str(e), 403)
             else:
                 return make_response(str(e), 500)
-        return make_response({**result, "type": response}, 200)
+        return make_response({**result, "type": form.response}, 200)
     else:
         g.response_type = 'deferred'
-        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema, replace=replace, **read_options)
+        enqueue.submit(src_file, ticket, tablename=form.tablename, schema=form.schema, replace=replace, **read_options)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": response}, 202)
 
 @app.route("/publish", methods=["POST"])
@@ -548,16 +550,28 @@ def publish():
                     type: string
                     description: WFS endpoint
         400:
-          description: General client error or table does not exist.
+          description: Form validation error or table does not exist.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: The key is the request body key.
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+                    description: Description of validation error.
+                example: {table: [Field is required.]}
     """
-    table = request.values.get('table')
-    if table is None:
-        return make_response("Missing required value 'table'.", 400)
-    schema = request.values.get('schema') or getenv('POSTGIS_DB_SCHEMA')
+    form = PublishForm(**request.form)
+    if not form.validate():
+        return make_response(form.errors, 400)
+    table = form.table
+    schema = form.schema or getenv('POSTGIS_DB_SCHEMA')
     postgres = Postgres(schema=schema)
     if not postgres.checkIfTableExists(table):
-        return make_response("Table '%s' does not exist in schema '%s'." % (table, schema), 400)
-    workspace = request.values.get('workspace') or getenv('GEOSERVER_WORKSPACE')
+        return make_response({'table': ['Field must represent an existing table in schema `%s`.' % (schema)]}, 400)
+    workspace = form.workspace or getenv('GEOSERVER_WORKSPACE')
     endpoints = _geoserver_endpoints(workspace, table)
     geoserver = Geoserver()
     if geoserver.checkIfLayersExists(workspace, table):
