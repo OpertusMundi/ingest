@@ -67,7 +67,7 @@ class Postgres(object):
         with self.engine.connect() as con:
             cur = con.execute('DROP TABLE IF EXISTS "%s"."%s"' % (schema, table))
 
-    def ingest(self, file, table, schema=None, chunksize=100000, commit=True, replace=False):
+    def ingest(self, file, table, schema=None, chunksize=100000, commit=True, replace=False, **kwargs):
         """Creates a DB table and ingests a vector file into it.
 
         It reads a vector file with geopandas (fiona) and writes the attributes into a database table.
@@ -79,6 +79,12 @@ class Postgres(object):
             table (string): The table name (it will be created if does not exist).
             schema (string): The DB schema to be used (if declared, it will bypass the class attribute).
             chunksize (int): Number of records that will be read from the file in each turn.
+            commit (bool, optional): If False, the database changes will roll back.
+            replace (bool, optional): If True, the table will be replace if it exists.
+            **kwargs: Additional arguments for GeoPandas read file.
+
+        Returns:
+            (tuple) The schema, the table name, and number of rows
         """
         schema = schema or self.schema
         extension = path.splitext(file)[1]
@@ -92,7 +98,7 @@ class Postgres(object):
             while eof == False:
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize))
+                    df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize), **kwargs)
                     length = len(df)
                     if length == 0:
                         eof = True

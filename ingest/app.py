@@ -64,14 +64,17 @@ def _executorCallback(future):
         dbc.commit()
         accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
-def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=False):
+def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
+
     Parameters:
         src_file (string): Full path to source file.
         ticket (string): The ticket of the request that will be also used as table and layer name.
         tablename (string): The resulted table name (default: ticket)
-    Raises:
-        Exception: In case postgres request fail.
+        schema (string, optional): Database schema.
+        replace (bool, optional): If True, the table will be replace if it exists.
+        **kwargs: Additional arguments for GeoPandas read file.
+
     Returns:
         (dict) Schema, table name and length.
     """
@@ -94,9 +97,9 @@ def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=Fa
     postgres = Postgres()
     if environ['FLASK_ENV'] == 'testing':
         # If environment is testing, do not commit
-        result = postgres.ingest(src_file, tablename, schema=schema, commit=False, replace=replace)
+        result = postgres.ingest(src_file, tablename, schema=schema, commit=False, replace=replace, **kwargs)
     else:
-        result = postgres.ingest(src_file, tablename, schema=schema, replace=replace)
+        result = postgres.ingest(src_file, tablename, schema=schema, replace=replace, **kwargs)
     try:
         rmtree(working_path)
     except Exception as e:
@@ -188,7 +191,7 @@ if getenv('CORS') is not None:
     cors = CORS(app, origins=origins)
 
 @executor.job
-def enqueue(src_file, ticket, schema=None, tablename=None, replace=None):
+def enqueue(src_file, ticket, schema=None, tablename=None, replace=None, **kwargs):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
 
@@ -196,7 +199,7 @@ def enqueue(src_file, ticket, schema=None, tablename=None, replace=None):
     dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
     dbc.commit()
     try:
-        result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename, replace=replace)
+        result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename, replace=replace, **kwargs)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     rows = result.pop('length')
@@ -356,6 +359,12 @@ def ingest():
                   type: boolean
                   description: If true, the table will be replace if exists.
                   default: false
+                encoding:
+                  type: string
+                  description: File encoding.
+                crs:
+                  type: string
+                  description: CRS of the dataset.
               required:
                 - resource
           application/x-www-form-urlencoded:
@@ -380,6 +389,12 @@ def ingest():
                   type: boolean
                   description: If true, the table will be replace if exists.
                   default: false
+                encoding:
+                  type: string
+                  description: File encoding.
+                crs:
+                  type: string
+                  description: CRS of the dataset.
               required:
                 - resource
       responses:
@@ -445,6 +460,7 @@ def ingest():
         replace = distutils.util.strtobool(replace)
     except ValueError:
         return make_response("replace field is boolean.", 400)
+    read_options = {opt: request.values.get(opt) for opt in ['encoding', 'crs'] if request.values.get(opt) is not None}
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -470,7 +486,7 @@ def ingest():
     if response == 'prompt':
         g.response_type = 'prompt'
         try:
-            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema, replace=replace)
+            result = _ingestIntoPostgis(src_file, ticket, tablename=tablename, schema=schema, replace=replace, **read_options)
         except Exception as e:
             if isinstance(e, SchemaException):
                 return make_response(str(e), 400)
@@ -481,7 +497,7 @@ def ingest():
         return make_response({**result, "type": response}, 200)
     else:
         g.response_type = 'deferred'
-        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema, replace=replace)
+        enqueue.submit(src_file, ticket, tablename=tablename, schema=schema, replace=replace, **read_options)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": response}, 202)
 
 @app.route("/publish", methods=["POST"])
