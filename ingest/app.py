@@ -168,6 +168,9 @@ app = Flask(__name__, instance_relative_config=True, instance_path=getenv('INSTA
 app.config.from_mapping(
     SECRET_KEY=getenv('SECRET_KEY'),
     DATABASE=getenv('DATABASE'),
+    JSON_SORT_KEYS=False,
+    EXECUTOR_TYPE="thread",
+    EXECUTOR_MAX_WORKERS="1"
 )
 
 # Ensure the instance folder exists and initialize application, db and executor.
