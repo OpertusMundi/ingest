@@ -103,12 +103,25 @@ def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=Fa
         pass
     return dict(zip(('schema', 'table', 'length'), result))
 
+def _geoserver_endpoints(workspace, layer):
+    """Form GeoServer WMS/WFS endpoints.
+
+    Parameters:
+        workspace (str): GeoServer workspace
+        layer (str): Layer name
+
+    Returns:
+        (dict) The GeoServer layer endpoints.
+    """
+    return {
+        "wms": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(workspace, layer),
+        "wfs": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(workspace, layer)
+    }
+
 def _publishTable(table, schema=None, workspace=None):
     """Publishes the contents of a PostGIS table to GeoServer.
     Parameters:
         table (string): The table name
-    Returns:
-        (dict) The GeoServer layer endpoint.
     """
     geoserver = Geoserver()
     workspace = workspace or getenv('GEOSERVER_WORKSPACE')
@@ -126,11 +139,6 @@ def _publishTable(table, schema=None, workspace=None):
     )
     geoserver.createStore(**store)
     geoserver.publish(store=store['name'], table=table, workspace=workspace)
-
-    return {
-        "wms": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(workspace, table),
-        "wfs": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(workspace, table)
-    }
 
 # Read (required) environment parameters
 for variable in [
@@ -522,8 +530,6 @@ def publish():
                     description: WFS endpoint
         400:
           description: General client error or table does not exist.
-        403:
-          description: Layer already published.
     """
     table = request.values.get('table')
     if table is None:
@@ -533,12 +539,13 @@ def publish():
     if not postgres.checkIfTableExists(table):
         return make_response("Table '%s' does not exist in schema '%s'." % (table, schema), 400)
     workspace = request.values.get('workspace') or getenv('GEOSERVER_WORKSPACE')
+    endpoints = _geoserver_endpoints(workspace, table)
     geoserver = Geoserver()
     if geoserver.checkIfLayersExists(workspace, table):
-        return make_response("Layer '%s' already published in '%s'." % (table, workspace), 403)
+        return make_response(endpoints, 200)
 
     try:
-        endpoints = _publishTable(table, schema=schema, workspace=workspace)
+        _publishTable(table, schema=schema, workspace=workspace)
     except Exception as e:
         return make_response(str(e), 500)
     return make_response(endpoints, 200)
