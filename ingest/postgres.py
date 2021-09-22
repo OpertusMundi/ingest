@@ -86,6 +86,7 @@ class Postgres(object):
         Returns:
             (tuple) The schema, the table name, and number of rows
         """
+        import pyproj
         schema = schema or self.schema
         extension = path.splitext(file)[1]
         if extension == '.kml':
@@ -104,7 +105,9 @@ class Postgres(object):
                         eof = True
                         continue
                     rows = rows + length
-                    srid = 4326 if df.crs is None else df.crs.to_epsg()
+                    crs = kwargs.pop('crs', None)
+                    crs = pyproj.crs.CRS.from_user_input(crs) if crs is not None else df.crs
+                    srid = 4326 if crs is None else crs.to_epsg()
 
                     if extension == '.kml':
                         df.geometry = df.geometry.map(lambda polygon: shapely.ops.transform(lambda x, y: (x, y), polygon))
