@@ -187,14 +187,31 @@ if getenv('CORS') is not None:
         origins = getenv('CORS')
     cors = CORS(app, origins=origins)
 
+def _get_ticket(response_type):
+    """Creates a unique ticket.
+
+    In case the process of the request is deferred, the ticket is persisted in database.
+
+    Parameters:
+        response_type (str): Type of the response.
+
+    Returns:
+        (str) Ticket
+    """
+    assert response_type in ['prompt', 'deferred']
+    ticket = md5(str(uuid4()).encode()).hexdigest()
+    if response_type == 'deferred':
+        dbc = db.get_db()
+        dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
+        dbc.commit()
+    g.ticket = ticket
+    mainLogger.info("Starting {} request with ticket {}.".format(response_type, ticket))
+    return ticket
+
 @executor.job
 def enqueue(src_file, ticket, schema=None, tablename=None, replace=None, **kwargs):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
-
-    dbc = db.get_db()
-    dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
-    dbc.commit()
     try:
         result = _ingestIntoPostgis(src_file, ticket, schema=schema, tablename=tablename, replace=replace, **kwargs)
     except Exception as e:
@@ -208,8 +225,6 @@ def prepare_request():
     if request.method == 'POST':
         # Request time
         g.request_time = datetime.now()
-        # Create a unique ticket for the request
-        g.ticket = md5(str(uuid4()).encode()).hexdigest()
         # Idempotent Key from headers
         idempotent_key = request.headers.get('X-Idempotency-Key')
         if idempotent_key is not None:
@@ -452,15 +467,13 @@ def ingest():
         403:
           description: Insufficient privilege for writing in the database schema.
     """
-
-    # Create a unique ticket for the request
-    ticket = g.ticket
-
     form = IngestForm(**request.form)
     if not form.validate():
         return make_response(form.errors, 400)
     replace = distutils.util.strtobool(form.replace)
     read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
+    # Create a unique ticket for the request
+    ticket = _get_ticket(form.response)
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
