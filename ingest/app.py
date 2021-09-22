@@ -609,13 +609,13 @@ def drop(table):
         - Ingest
       parameters:
         - name: schema
-          in: path
+          in: query
           description: The database schema; if not present the default schema will be assumed.
           required: false
           schema:
             type: string
         - name: workspace
-          in: path
+          in: query
           description: The workspace that the layer belongs; if not present, the default workspace will be assumed.
           required: false
           schema:
@@ -647,7 +647,7 @@ def unpublish(layer):
         - Publish
       parameters:
         - name: workspace
-          in: path
+          in: query
           description: The workspace that the layer belongs; if not present, the default workspace will be assumed.
           required: false
           schema:
