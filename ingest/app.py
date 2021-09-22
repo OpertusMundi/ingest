@@ -96,11 +96,7 @@ def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=Fa
         src_file = src_path
     # Ingest
     postgres = Postgres()
-    if environ['FLASK_ENV'] == 'testing':
-        # If environment is testing, do not commit
-        result = postgres.ingest(src_file, tablename, schema=schema, commit=False, replace=replace, **kwargs)
-    else:
-        result = postgres.ingest(src_file, tablename, schema=schema, replace=replace, **kwargs)
+    result = postgres.ingest(src_file, tablename, schema=schema, replace=replace, **kwargs)
     try:
         rmtree(working_path)
     except Exception as e:
