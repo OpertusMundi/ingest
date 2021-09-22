@@ -187,25 +187,19 @@ if getenv('CORS') is not None:
         origins = getenv('CORS')
     cors = CORS(app, origins=origins)
 
-def _get_ticket(response_type):
+def _get_ticket():
     """Creates a unique ticket.
 
     In case the process of the request is deferred, the ticket is persisted in database.
 
-    Parameters:
-        response_type (str): Type of the response.
-
     Returns:
         (str) Ticket
     """
-    assert response_type in ['prompt', 'deferred']
     ticket = md5(str(uuid4()).encode()).hexdigest()
-    if response_type == 'deferred':
-        dbc = db.get_db()
-        dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
-        dbc.commit()
+    dbc = db.get_db()
+    dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
+    dbc.commit()
     g.ticket = ticket
-    mainLogger.info("Starting {} request with ticket {}.".format(response_type, ticket))
     return ticket
 
 @executor.job
@@ -242,26 +236,32 @@ def log_request(response):
     """Log request.
     Log only POST requests. If request has been deferred, the queue job is responsible for logging.
     """
-    if response.status_code == 202 or request.method != 'POST':
+    if request.method != 'POST':
+        return response
+    if response.status_code == 202:
+        db.close_db()
         return response
     ticket, idempotent_key, request_time = (getattr(g, attr) for attr in ['ticket', 'idempotent_key', 'request_time'])
     execution_time = round((datetime.now() - request_time).total_seconds(), 3)
     if response.status_code != 200:
         # In case of errors, it will not write to database
         comment = response.get_data(as_text=True)
+        result = None
+        rows = None
+        success = False
         accountLogger(ticket=ticket, success=False, execution_start=request_time, execution_time=execution_time, comment=comment)
-        return response
+    else:
+        response_json = response.json
+        result = json.dumps(response_json)
+        success = True
+        comment = None
+        rows = response_json.pop('length') if 'length' in response_json else None
+        accountLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
     # In case method is POST and response status is 200
-    response_json = response.json
-    rows = response_json.pop('length') if 'length' in response_json else None
     with app.app_context():
         dbc = db.get_db()
-        dbc.execute(
-            'INSERT INTO tickets (ticket, idempotent_key, request, result, status, success, requested_time, execution_time, rows) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?);',
-            [ticket, idempotent_key, request.endpoint, json.dumps(response_json), True, True, request_time, execution_time, rows]
-        )
+        dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=?, rows=? WHERE ticket=?;', [result, success, execution_time, comment, rows, ticket])
         dbc.commit()
-    accountLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
     return response
 
 @app.teardown_request
@@ -473,7 +473,8 @@ def ingest():
     replace = distutils.util.strtobool(form.replace)
     read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
     # Create a unique ticket for the request
-    ticket = _get_ticket(form.response)
+    ticket = _get_ticket()
+    mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -575,6 +576,7 @@ def publish():
     form = PublishForm(**request.form)
     if not form.validate():
         return make_response(form.errors, 400)
+    _get_ticket()
     table = form.table
     schema = form.schema or getenv('POSTGIS_DB_SCHEMA')
     postgres = Postgres(schema=schema)
