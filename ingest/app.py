@@ -219,7 +219,7 @@ def prepare_request():
                 exists = dbc.execute("SELECT idempotent_key FROM tickets WHERE idempotent_key=?;", [idempotent_key]).fetchone() is not None
             if exists:
                 g.idempotent_key = None
-                return make_response('Idempotent-Key already exists.', 400)
+                return make_response({'Idempotent-Key': ['Field must be unique.']}, 400)
         g.idempotent_key = idempotent_key
 
 @app.after_request
@@ -496,7 +496,7 @@ def ingest():
     else:
         g.response_type = 'deferred'
         enqueue.submit(src_file, ticket, tablename=form.tablename, schema=form.schema, replace=replace, **read_options)
-        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": response}, 202)
+        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": form.response}, 202)
 
 @app.route("/publish", methods=["POST"])
 def publish():
