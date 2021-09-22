@@ -241,6 +241,9 @@ def log_request(response):
     if response.status_code == 202:
         db.close_db()
         return response
+    if response.status_code == 400:
+        # Requests with client errors are not logged in db
+        return response
     ticket, idempotent_key, request_time = (getattr(g, attr) for attr in ['ticket', 'idempotent_key', 'request_time'])
     execution_time = round((datetime.now() - request_time).total_seconds(), 3)
     if response.status_code != 200:
@@ -470,11 +473,8 @@ def ingest():
     form = IngestForm(**request.form)
     if not form.validate():
         return make_response(form.errors, 400)
-    replace = distutils.util.strtobool(form.replace)
+    replace = distutils.util.strtobool(form.replace) if not isinstance(form.replace, bool) else form.replace
     read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
-    # Create a unique ticket for the request
-    ticket = _get_ticket()
-    mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -487,7 +487,11 @@ def ingest():
         if resource is None:
             mainLogger.info('Client error: %s', 'resource not uploaded')
             return make_response({'resource': ["Not uploaded."]}, 400)
+    # Create a unique ticket for the request
+    ticket = _get_ticket()
+    mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
 
+    if request.values.get('resource') is None:
         # Create tmp directory and store the uploaded file.
         working_path = _getWorkingPath(ticket)
         src_path = path.join(working_path, 'src')
@@ -576,12 +580,12 @@ def publish():
     form = PublishForm(**request.form)
     if not form.validate():
         return make_response(form.errors, 400)
-    _get_ticket()
     table = form.table
     schema = form.schema or getenv('POSTGIS_DB_SCHEMA')
     postgres = Postgres(schema=schema)
     if not postgres.checkIfTableExists(table):
         return make_response({'table': ['Field must represent an existing table in schema `%s`.' % (schema)]}, 400)
+    _get_ticket()
     workspace = form.workspace or getenv('GEOSERVER_WORKSPACE')
     endpoints = _geoserver_endpoints(workspace, table)
     geoserver = Geoserver()
