@@ -69,12 +69,13 @@ def test_postgres_3():
 
 def test_postgres_4():
     """Functional Test: Test ingest shapefile, uncompress and cleanup"""
-    result = _ingestIntoPostgis(shapefile, 'ticket')
+    ticket = str(uuid4())
+    result = _ingestIntoPostgis(shapefile, ticket)
     assert 'schema' in result
     assert 'table' in result
     assert 'length' in result
     assert result['length'] == 3
-    assert not path.isdir(_getWorkingPath('ticket'))
+    assert not path.isdir(_getWorkingPath(ticket))
 
 def test_ingest_1():
     """Functional Test: Test KML ingest"""
@@ -128,3 +129,41 @@ def test_ingest_3():
         r = res.get_json()
         assert r.get('request') == 'ingest'
         assert r.get('ticket') == ticket
+
+def test_ingest_4():
+    """Functional Test: Test table replacement"""
+    tablename = str(uuid4())
+    with app.test_client() as client:
+        res = client.post(
+            '/ingest',
+            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
+        )
+        assert res.status_code == 200
+    sleep(1.0)
+    with app.test_client() as client:
+        res = client.post(
+            '/ingest',
+            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
+        )
+        assert res.status_code == 500
+    sleep(1.0)
+    with app.test_client() as client:
+        res = client.post(
+            '/ingest',
+            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename, replace='true')
+        )
+        assert res.status_code == 200
+
+def test_ingest_5():
+    """Functional Test: Test drop table"""
+    tablename = str(uuid4())
+    with app.test_client() as client:
+        res = client.post(
+            '/ingest',
+            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
+        )
+        assert res.status_code == 200
+    sleep(1.0)
+    with app.test_client() as client:
+        res = client.delete(f'/ingest/{tablename}')
+        assert res.status_code == 204
