@@ -1,6 +1,7 @@
 from flask import Flask
 from flask import request, current_app, make_response, g
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException, InternalServerError
 from flask_cors import CORS
 from os import path, getenv, environ, makedirs, unlink
 from shutil import rmtree
@@ -19,10 +20,9 @@ import distutils.util
 from . import db
 from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
-from .logging import getLoggers
+from .logging import mainLogger, accountingLogger, exception_as_rfc5424_structured_data
 from .forms import IngestForm, PublishForm
 
-mainLogger, accountLogger = getLoggers()
 
 def _makeDir(path):
     """Creates recursively the path, ignoring warnings for existing directories."""
@@ -63,7 +63,7 @@ def _executorCallback(future):
         execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds(),3)
         dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=?, rows=? WHERE ticket=?;', [result, success, execution_time, comment, rows, ticket])
         dbc.commit()
-        accountLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
+        accountingLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
 
 def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
@@ -252,14 +252,14 @@ def log_request(response):
         result = None
         rows = None
         success = False
-        accountLogger(ticket=ticket, success=False, execution_start=request_time, execution_time=execution_time, comment=comment)
+        accountingLogger(ticket=ticket, success=False, execution_start=request_time, execution_time=execution_time, comment=comment)
     else:
         response_json = response.json
         result = json.dumps(response_json)
         success = True
         comment = None
         rows = response_json.pop('length') if 'length' in response_json else None
-        accountLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
+        accountingLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
     # In case method is POST and response status is 200
     with app.app_context():
         dbc = db.get_db()
@@ -813,3 +813,22 @@ with app.test_request_context():
     spec.path(view=get_ticket)
     spec.path(view=drop)
     spec.path(view=unpublish)
+
+
+#
+# Exception handlers
+#
+
+# Define a catch-all exception handler that simply logs a proper error message.
+# Note: If actual error handling is needed, consider defining handlers targeting 
+#   more specific exception types (derived from Exception).
+@app.errorhandler(Exception)
+def handle_any_error(ex):
+    exc_message = str(ex)
+    mainLogger.error("Unexpected error: %s", exc_message, extra=exception_as_rfc5424_structured_data(ex))
+    # Convert and return an HTTPException (is a valid response object for Flask)
+    if isinstance(ex, HTTPException):
+        return ex
+    else:
+        return InternalServerError(exc_message)
+
