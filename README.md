@@ -5,19 +5,19 @@
 ## Description
 
 The purpose of this package is to deploy a micro-service which ingests a KML or ShapeFile into a PostGIS capable PostgreSQL database and publish an associated layer to GeoServer.
-The service is built on *flask* and *sqlite*, GeoPandas and GeoAlchemy are used for the database ingestion and pyCurl to communicate with GeoServer REST API.
+The service is built on *flask* and *SQLAlchemy*, GeoPandas and GeoAlchemy are used for the database ingestion and pyCurl to communicate with GeoServer REST API.
 
 ## Installation
 
-The package requires at least Python 3.7. First, install *sqlite* and *pyculr*, e.g. for Debian:
+The package requires at least Python 3.7. First, install and *pyculr*, e.g. for Debian:
 ```
-apt-get install sqlite3 python3-pycurl
+apt-get install python3-pycurl
 ```
 To install with **pip**:
 ```
 pip install git+https://github.com/OpertusMundi/ingest.git
 ```
-Initialize sqlite database by running:
+Initialize database by running:
 ```
 flask init-db
 ```
@@ -25,7 +25,6 @@ flask init-db
 The following environment variables should be set:
 - `FLASK_ENV`: `development` or `production`.
 - `FLASK_APP`: `ingest` (if running as a container, this will be always set).
-- `DATABASE`: (optional) The path to the SQLite database holding state of this microservice (default is `.data/ingest.sqlite`). 
 - `POSTGIS_HOST`: The PostGIS host to use for ingesting spatial datasets.
 - `POSTGIS_PORT`: The PostGIS host.
 - `POSTGIS_DB_NAME`: The database to use on the PostGIS server.
@@ -42,6 +41,7 @@ The following environment variables should be set:
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
 - `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
 - `INPUT_DIR`: The input directory; all input paths will be resolved under this directory. 
+- `DATABASE_URI`: `engine://user:pass@host:port/database`
 
 A development server could be started with:
 ```
@@ -77,10 +77,10 @@ Build:
 
 Prepare the following files/directories:
 
-   * `./data/ingest.sqlite`:  the SQLite database (an empty database, if running for first time)
    * `./secrets/secret_key`: file needed (by Flask) for signing/encrypting session data
    * `./secrets/postgis/ingest-password`: file containing the password for the PostGIS database user
    * `./secrets/geoserver/ingest-password`: file containing the password for the Geoserver user
+   * `./secrets/db_pass`: file containing the password for the main database user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
    * `./input`: a directory to be used as the root of input files

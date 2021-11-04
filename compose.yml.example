@@ -27,6 +27,10 @@ services:
       target: /secrets/postgis/ingest-password
       read_only: true
     - type: 'bind'
+      source: ./secrets/db_pass
+      target: /secrets/db_pass
+      read_only: true
+    - type: 'bind'
       source: ./secrets/geoserver/ingest-password
       target: /secrets/geoserver/ingest-password
       read_only: true
@@ -66,6 +70,12 @@ services:
       TZ: Europe/Athens
       INPUT_DIR: /var/local/ingest/input
       TEMP_DIR: /var/local/ingest/temp
+      DB_ENGINE: 'postgresql'
+      DB_HOST: 'postgres-1-opertusmundi'
+      DB_PORT: '5432'
+      DB_USER: 'ingest'
+      DB_NAME: 'opertusmundi_ingest'
+      DB_PASS_FILE: '/secrets/db_pass'
 
 volumes:
   input:

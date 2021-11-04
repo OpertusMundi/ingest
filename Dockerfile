@@ -11,7 +11,7 @@ LABEL framework="flask"
 LABEL usage="ingest microservice for rasters and vectors"
 
 RUN apk update && \
-  apk add --no-cache sqlite openssl postgresql-dev curl py3-yaml py3-numpy py3-psycopg2 py3-sqlalchemy
+  apk add --no-cache openssl postgresql-dev curl py3-yaml py3-numpy py3-psycopg2 py3-sqlalchemy
 
 ENV VERSION="${VERSION}"
 ENV PYTHON_VERSION="3.8"

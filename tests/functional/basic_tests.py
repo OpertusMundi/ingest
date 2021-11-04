@@ -14,7 +14,7 @@ from ingest.app import _ingestIntoPostgis, _getWorkingPath
 def setup_module():
     print(" == Setting up tests for %s"  % (__name__))
     app.config['TESTING'] = True
-    print(" == Using database at %s"  % (app.config['DATABASE']))
+    print(" == Using database at %s"  % (app.config['SQLALCHEMY_DATABASE_URI']))
     pass
 
 def teardown_module():

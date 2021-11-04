@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException, InternalServerError
 from flask_cors import CORS
 from os import path, getenv, environ, makedirs, unlink
+import sys
 from shutil import rmtree
 import tempfile
 from uuid import uuid4
@@ -16,8 +17,11 @@ import zipfile
 import tarfile
 import json
 import distutils.util
+from sqlalchemy import create_engine
 
-from . import db
+from .database import db
+from .database.model import Queue
+from .database.actions import db_queue, db_update_queue_status
 from .postgres import Postgres, SchemaException, InsufficientPrivilege
 from .geoserver import Geoserver
 from .logging import mainLogger, accountingLogger, exception_as_rfc5424_structured_data
@@ -54,16 +58,18 @@ def _checkConnectToGeoserver():
     gs_url = gs.check()
     mainLogger.debug('_checkConnectToGeoserver(): Connected to %s' % (gs_url))
 
+def _checkConnectToDB():
+    url = environ['DATABASE_URI']
+    engine = create_engine(url)
+    conn = engine.connect()
+    conn.execute('SELECT 1')
+    mainLogger.debug("_checkConnectToDB(): Connected to %s", engine.url)
+
 def _executorCallback(future):
     """The callback function called when a job has been completed."""
-    ticket, result, success, comment, rows = future.result()
-    with app.app_context():
-        dbc = db.get_db()
-        time = dbc.execute('SELECT requested_time FROM tickets WHERE ticket = ?;', [ticket]).fetchone()['requested_time']
-        execution_time = round((datetime.now(timezone.utc) - time.replace(tzinfo=timezone.utc)).total_seconds(),3)
-        dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=?, rows=? WHERE ticket=?;', [result, success, execution_time, comment, rows, ticket])
-        dbc.commit()
-        accountingLogger(ticket=ticket, success=success, execution_start=time, execution_time=execution_time, comment=comment, rows=rows)
+    ticket, result, success, error_msg, rows = future.result()
+    record = db_update_queue_status(ticket, completed=True, success=success, result=result, error_msg=error_msg, rows=rows)
+    accountingLogger(ticket=ticket, success=success, execution_start=record.initiated, execution_time=record.execution_time, comment=error_msg, rows=rows)
 
 def _ingestIntoPostgis(src_file, ticket, tablename=None, schema=None, replace=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
@@ -143,11 +149,11 @@ def _publishTable(table, schema=None, workspace=None):
 # Read (required) environment parameters
 for variable in [
     'POSTGIS_HOST', 'POSTGIS_USER', 'POSTGIS_PASS', 'POSTGIS_PORT', 'POSTGIS_DB_NAME', 'POSTGIS_DB_SCHEMA',
-    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_STORE', 'INPUT_DIR'
+    'GEOSERVER_URL', 'GEOSERVER_USER', 'GEOSERVER_PASS', 'GEOSERVER_STORE', 'INPUT_DIR', 'DATABASE_URI'
 ]:
-    value = getenv(variable)
-    if value is None:
-        raise Exception('Environment variable {} is not set.'.format(variable))
+    if getenv(variable) is None:
+        mainLogger.fatal('Environment variable not set [variable="%s"]', variable)
+        sys.exit(1)
 
 
 # Initialize OpenAPI documentation
@@ -167,7 +173,8 @@ spec = APISpec(
 app = Flask(__name__, instance_relative_config=True, instance_path=getenv('INSTANCE_PATH'))
 app.config.from_mapping(
     SECRET_KEY=getenv('SECRET_KEY'),
-    DATABASE=getenv('DATABASE'),
+    SQLALCHEMY_DATABASE_URI=environ['DATABASE_URI'],
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
     JSON_SORT_KEYS=False,
     EXECUTOR_TYPE="thread",
     EXECUTOR_MAX_WORKERS="1"
@@ -177,7 +184,6 @@ app.config.from_mapping(
 _makeDir(app.instance_path)
 db.init_app(app)
 executor = Executor(app)
-executor.add_default_done_callback(_executorCallback)
 
 #Enable CORS
 if getenv('CORS') is not None:
@@ -187,22 +193,23 @@ if getenv('CORS') is not None:
         origins = getenv('CORS')
     cors = CORS(app, origins=origins)
 
-def _get_ticket():
-    """Creates a unique ticket.
+# Register cli commands
+with app.app_context():
+    import ingest.cli
 
-    In case the process of the request is deferred, the ticket is persisted in database.
+def _get_session():
+    """Prepares session.
 
     Returns:
-        (str) Ticket
+        (dict): Dictionary with session info.
     """
-    ticket = md5(str(uuid4()).encode()).hexdigest()
-    dbc = db.get_db()
-    dbc.execute('INSERT INTO tickets (ticket, idempotent_key, request) VALUES(?, ?, ?);', [ticket, g.idempotent_key, request.endpoint])
-    dbc.commit()
-    g.ticket = ticket
-    return ticket
+    idempotency_key = request.headers.get('X-Idempotency-Key')
+    queue = db_queue(idempotency_key=idempotency_key, request=request.endpoint)
 
-@executor.job
+    session = {'ticket': queue['ticket'], 'idempotency_key': idempotency_key, 'initiated': queue['initiated']}
+
+    return session
+
 def enqueue(src_file, ticket, schema=None, tablename=None, replace=None, **kwargs):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
@@ -213,41 +220,17 @@ def enqueue(src_file, ticket, schema=None, tablename=None, replace=None, **kwarg
     rows = result.pop('length')
     return (ticket, json.dumps(result), 1, None, rows)
 
-@app.before_request
-def prepare_request():
-    """Prepares environment for the POST request."""
-    if request.method == 'POST':
-        # Request time
-        g.request_time = datetime.now()
-        # Idempotent Key from headers
-        idempotent_key = request.headers.get('X-Idempotency-Key')
-        if idempotent_key is not None:
-            # Check uniqueness
-            with app.app_context():
-                dbc = db.get_db()
-                exists = dbc.execute("SELECT idempotent_key FROM tickets WHERE idempotent_key=?;", [idempotent_key]).fetchone() is not None
-            if exists:
-                g.idempotent_key = None
-                return make_response({'Idempotent-Key': ['Field must be unique.']}, 400)
-        g.idempotent_key = idempotent_key
-
 @app.after_request
 def log_request(response):
     """Log request.
     Log only POST requests. If request has been deferred, the queue job is responsible for logging.
     """
-    if request.method != 'POST':
+    if request.method != 'POST' or response.status_code in [202, 400]:
         return response
-    if response.status_code == 202:
-        db.close_db()
-        return response
-    if response.status_code == 400:
-        # Requests with client errors are not logged in db
-        return response
-    ticket, idempotent_key, request_time = (getattr(g, attr) for attr in ['ticket', 'idempotent_key', 'request_time'])
-    execution_time = round((datetime.now() - request_time).total_seconds(), 3)
+    ticket = g.session['ticket']
+    request_time = g.session['initiated']
+    execution_time = round((datetime.now(timezone.utc).astimezone() - request_time).total_seconds(), 3)
     if response.status_code != 200:
-        # In case of errors, it will not write to database
         comment = response.get_data(as_text=True)
         result = None
         rows = None
@@ -260,11 +243,8 @@ def log_request(response):
         comment = None
         rows = response_json.pop('length') if 'length' in response_json else None
         accountingLogger(ticket=ticket, success=True, execution_start=request_time, execution_time=execution_time, rows=rows)
-    # In case method is POST and response status is 200
-    with app.app_context():
-        dbc = db.get_db()
-        dbc.execute('UPDATE tickets SET result=?, success=?, status=1, execution_time=?, comment=?, rows=? WHERE ticket=?;', [result, success, execution_time, comment, rows, ticket])
-        dbc.commit()
+    # In case method is POST and response status is not 202 or 400
+    db_update_queue_status(ticket, completed=True, success=success, result=result, error_msg=comment, rows=rows)
     return response
 
 @app.teardown_request
@@ -325,6 +305,11 @@ def health_check():
         _checkConnectToPostgis()
     except Exception as exc:
         return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'detail': str(exc)}, 200);
+    # Check that we can connect to Database
+    try:
+        _checkConnectToDB()
+    except Exception as exc:
+        return make_response({'status': 'FAILED', 'reason': 'cannot connect to Database backend', 'detail': str(exc)}, 200)
     # Check that we can connect to our Geoserver backend
     try:
         _checkConnectToGeoserver()
@@ -414,7 +399,7 @@ def ingest():
                 - resource
       responses:
         200:
-          description: Ingestion / publication completed.
+          description: Ingestion completed.
           content:
             application/json:
               schema:
@@ -433,7 +418,7 @@ def ingest():
                     type: string
                     description: The response type as requested.
         202:
-          description: Accepted for processing, but ingestion/publish has not been completed.
+          description: Accepted for processing, but ingestion has not been completed.
           content:
             application/json:
               schema:
@@ -473,8 +458,6 @@ def ingest():
     form = IngestForm(**request.form)
     if not form.validate():
         return make_response(form.errors, 400)
-    replace = distutils.util.strtobool(form.replace) if not isinstance(form.replace, bool) else form.replace
-    read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -487,8 +470,14 @@ def ingest():
         if resource is None:
             mainLogger.info('Client error: %s', 'resource not uploaded')
             return make_response({'resource': ["Not uploaded."]}, 400)
-    # Create a unique ticket for the request
-    ticket = _get_ticket()
+
+    session = _get_session()
+    g.session = session
+
+    replace = distutils.util.strtobool(form.replace) if not isinstance(form.replace, bool) else form.replace
+    read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
+
+    ticket = session['ticket']
     mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
 
     if request.values.get('resource') is None:
@@ -513,7 +502,8 @@ def ingest():
         return make_response({**result, "type": form.response}, 200)
     else:
         g.response_type = 'deferred'
-        enqueue.submit(src_file, ticket, tablename=form.tablename, schema=form.schema, replace=replace, **read_options)
+        future = executor.submit(enqueue, src_file, ticket, tablename=form.tablename, schema=form.schema, replace=replace, **read_options)
+        future.add_done_callback(_executorCallback)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": form.response}, 202)
 
 @app.route("/publish", methods=["POST"])
@@ -585,7 +575,7 @@ def publish():
     postgres = Postgres(schema=schema)
     if not postgres.checkIfTableExists(table):
         return make_response({'table': ['Field must represent an existing table in schema `%s`.' % (schema)]}, 400)
-    _get_ticket()
+    g.session = _get_session()
     workspace = form.workspace or getenv('GEOSERVER_WORKSPACE')
     endpoints = _geoserver_endpoints(workspace, table)
     geoserver = Geoserver()
@@ -711,15 +701,17 @@ def status(ticket):
     """
     if ticket is None:
         return make_response('Ticket is missing.', 400)
-    dbc = db.get_db()
-    results = dbc.execute('SELECT status, success, requested_time, execution_time, comment FROM tickets WHERE ticket = ?', [ticket]).fetchone()
-    if results is not None:
-        if results['success'] is not None:
-            success = bool(results['success'])
-        else:
-            success = None
-        return make_response({"completed": bool(results['status']), "success": success, "requested": results['requested_time'].isoformat(), "executionTime": results['execution_time'], "comment": results['comment']}, 200)
-    return make_response('Not found.', 404)
+    queue = Queue().get(ticket=ticket)
+    if queue is None:
+        return make_response({"status": "Process not found."}, 404)
+    info = {
+        "completed": queue['completed'],
+        "success": queue['success'],
+        "requested": queue['initiated'].isoformat(),
+        "executionTime": queue['execution_time'],
+        "comment": queue['error_msg'],
+    }
+    return make_response(info, 200)
 
 @app.route("/result/<ticket>")
 def result(ticket):
@@ -759,11 +751,10 @@ def result(ticket):
     """
     if ticket is None:
         return make_response('Resource ticket is missing.', 400)
-    dbc = db.get_db()
-    query = dbc.execute('SELECT result, rows FROM tickets WHERE ticket = ? and request = ?', [ticket, 'ingest']).fetchone()
-    if query is None:
-        return make_response('Not found.', 404)
-    return make_response({**json.loads(query['result']), 'length': query['rows']}, 200)
+    queue = Queue().get(ticket=ticket)
+    if queue is None:
+        return make_response({"status": "Process not found."}, 404)
+    return make_response({**json.loads(queue['result']), 'length': queue['rows']}, 200)
 
 @app.route("/ticket_by_key/<key>")
 def get_ticket(key):
@@ -798,11 +789,10 @@ def get_ticket(key):
         404:
           description: Idempotent key not found.
     """
-    dbc = db.get_db()
-    query = dbc.execute('SELECT ticket, request FROM tickets WHERE idempotent_key = ?', [key]).fetchone()
-    if query is None:
-        return make_response('Not found.', 404)
-    return make_response({'ticket': query['ticket'], 'request': query['request']}, 200)
+    queue = Queue().get(idempotency_key=key)
+    if queue is None:
+        return make_response({"status": "Process not found."}, 404)
+    return make_response({'ticket': queue['ticket'], 'request': queue['request']}, 200)
 
 with app.test_request_context():
     spec.path(view=ingest)
@@ -820,7 +810,7 @@ with app.test_request_context():
 #
 
 # Define a catch-all exception handler that simply logs a proper error message.
-# Note: If actual error handling is needed, consider defining handlers targeting 
+# Note: If actual error handling is needed, consider defining handlers targeting
 #   more specific exception types (derived from Exception).
 @app.errorhandler(Exception)
 def handle_any_error(ex):

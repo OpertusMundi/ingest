@@ -7,7 +7,7 @@ FROM osgeo/gdal:alpine-normal-3.1.0
 ARG VERSION
 
 RUN apk update && \
-  apk add --no-cache sqlite openssl postgresql-dev curl py3-yaml py3-numpy py3-psycopg2 py3-sqlalchemy
+  apk add --no-cache openssl postgresql-dev curl py3-yaml py3-numpy py3-psycopg2 py3-sqlalchemy
 
 ENV VERSION="${VERSION}"
 ENV PYTHON_VERSION="3.8"
@@ -22,7 +22,7 @@ RUN pip3 install --upgrade pip && \
 ENV FLASK_APP="ingest" \
     FLASK_ENV="testing" \
     FLASK_DEBUG="false" \
-    TEMP_DIR="" 
+    TEMP_DIR=""
 
 COPY run-nosetests.sh /
 RUN chmod a+x /run-nosetests.sh

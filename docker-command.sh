@@ -5,7 +5,7 @@ set -u -e -o pipefail
 
 # Check environment
 
-python_version="$(python3 -c 'import platform; print(platform.python_version())' | cut -d '.' -f 1,2)" 
+python_version="$(python3 -c 'import platform; print(platform.python_version())' | cut -d '.' -f 1,2)"
 if [ "${python_version}" != "${PYTHON_VERSION}" ]; then
     echo "PYTHON_VERSION (${PYTHON_VERSION}) different with version reported from python3 executable (${python_version})" 1>&2 && exit 1
 fi
@@ -35,6 +35,18 @@ if [ ! -f "${LOGGING_FILE_CONFIG}" ]; then
     exit 1
 fi
 
+for var in 'DB_ENGINE' 'DB_HOST' 'DB_PORT' 'DB_USER' 'DB_NAME'; do
+  eval value='$'${var}
+  if [ -z ${value} ]; then
+    echo "${var} is not set!" 1>&2 && exit 1
+  fi
+done
+
+if [ ! -f "${DB_PASS_FILE}" ]; then
+    echo "DB_PASS_FILE does not exist!" 1>&2 && exit 1
+fi
+DB_PASS="$(cat ${DB_PASS_FILE})"
+
 logging_file_config=${LOGGING_FILE_CONFIG}
 
 if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
@@ -44,10 +56,10 @@ if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
 fi
 
 export FLASK_APP="ingest"
-export DATABASE="./data/ingest.sqlite"
 export SECRET_KEY="$(cat ${SECRET_KEY_FILE} | tr -d '\n')"
 export POSTGIS_PASS="$(cat ${POSTGIS_PASS_FILE} | tr -d '\n')"
 export GEOSERVER_PASS="$(cat ${GEOSERVER_PASS_FILE} | tr -d '\n')"
+export DATABASE_URI="${DB_ENGINE}://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 # Initialize database
 

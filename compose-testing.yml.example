@@ -26,7 +26,6 @@ services:
       TEMP_DIR: '/work/temp'
       INPUT_DIR: '/work/tests/test_data/'
       INSTANCE_PATH: '/work/data'
-      DATABASE: '/work/data/ingest-testing.sqlite'
       POSTGIS_HOST: 'postgres-1-opertusmundi'
       POSTGIS_PORT: '5432'
       POSTGIS_USER: 'ingest'
@@ -38,7 +37,12 @@ services:
       GEOSERVER_WORKSPACE: 'default'
       GEOSERVER_STORE: 'postgres-1'
       GEOSERVER_PASS_FILE: '/work/secrets/geoserver/ingest-password'
-      INPUT_DIR: '/work/tests/test_data'
+      DB_ENGINE: 'postgresql'
+      DB_HOST: 'postgres-1-opertusmundi'
+      DB_PORT: '5432'
+      DB_USER: 'ingest'
+      DB_NAME: 'opertusmundi_ingest'
+      DB_PASS_FILE: '/secrets/db_pass'
 
 networks:
   opertusmundi_network:
