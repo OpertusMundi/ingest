@@ -35,13 +35,6 @@ if [ ! -f "${LOGGING_FILE_CONFIG}" ]; then
     exit 1
 fi
 
-for var in 'DB_ENGINE' 'DB_HOST' 'DB_PORT' 'DB_USER' 'DB_NAME'; do
-  eval value='$'${var}
-  if [ -z ${value} ]; then
-    echo "${var} is not set!" 1>&2 && exit 1
-  fi
-done
-
 if [ ! -f "${DB_PASS_FILE}" ]; then
     echo "DB_PASS_FILE does not exist!" 1>&2 && exit 1
 fi

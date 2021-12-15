@@ -41,8 +41,8 @@ services:
       DB_HOST: 'postgres-1-opertusmundi'
       DB_PORT: '5432'
       DB_USER: 'ingest'
-      DB_NAME: 'opertusmundi_ingest'
-      DB_PASS_FILE: '/secrets/db_pass'
+      DB_NAME: 'ingest-tests'
+      DB_PASS_FILE: '/secrets/database-password'
 
 networks:
   opertusmundi_network:

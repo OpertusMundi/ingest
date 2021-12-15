@@ -7,8 +7,9 @@ name: default
 environment:
   POSTGRES_HOST: postgis-1
   POSTGRES_PORT: '5432'
-  DATASTORE_DATABASE: ingest-tests
-  DATASTORE_USER: tester1
+  DATABASE: ingest
+  DATABASE_USER: tester1
+  DATASTORE_DATABASE: ingest-data
   GEOSERVER_HOST: geoserver-1
   GEOSERVER_PORT: '8080'
   GEOSERVER_WORKSPACE: work_1
@@ -30,7 +31,7 @@ steps:
   environment:
     POSTGRES_PASSWORD:
       from_secret: postgres_password
-    DATASTORE_PASSWORD:
+    DATABASE_PASSWORD:
       from_secret: postgres_test_password
   commands:
   # Wait for database server to be ready
@@ -40,13 +41,15 @@ steps:
   - touch ~/.pgpass
   - chmod og-rwx ~/.pgpass
   - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:postgres:$${POSTGRES_PASSWORD}" >> ~/.pgpass
-  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:$${DATASTORE_USER}:$${DATASTORE_PASSWORD}" >> ~/.pgpass
+  - echo "$${POSTGRES_HOST}:$${POSTGRES_PORT}:*:$${DATABASE_USER}:$${DATABASE_PASSWORD}" >> ~/.pgpass
   # Create user/database for tests
-  - echo "CREATE USER \"$${DATASTORE_USER}\" WITH PASSWORD '$${DATASTORE_PASSWORD}'" | psql -U postgres
-  - echo "CREATE DATABASE \"$${DATASTORE_DATABASE}\" WITH OWNER \"$${DATASTORE_USER}\"" | psql -U postgres
+  - echo "CREATE USER \"$${DATABASE_USER}\" WITH PASSWORD '$${DATABASE_PASSWORD}'" | psql -U postgres
+  - echo "CREATE DATABASE \"$${DATABASE}\" WITH OWNER \"$${DATABASE_USER}\"" | psql -U postgres
+  - echo "CREATE DATABASE \"$${DATASTORE_DATABASE}\" WITH OWNER \"$${DATABASE_USER}\"" | psql -U postgres
   - echo "CREATE EXTENSION postgis" | psql -U postgres $${DATASTORE_DATABASE}
   - psql -U postgres -l -A -t
-  - psql -U $${DATASTORE_USER} -d $${DATASTORE_DATABASE} -A -t -c '\d'
+  - psql -U $${DATABASE_USER} -d $${DATABASE} -A -t -c '\d'
+  - psql -U $${DATABASE_USER} -d $${DATASTORE_DATABASE} -A -t -c '\d'
 
 - name: setup-geoserver
   image: curlimages/curl:7.75.0
@@ -59,7 +62,7 @@ steps:
       from_secret: geoserver_test_password
     GEOSERVER_ADMIN_PASSWORD:
       from_secret: geoserver_admin_password
-    DATASTORE_PASSWORD:
+    DATABASE_PASSWORD:
       from_secret: postgres_test_password
   commands:
   - export GEOSERVER_URL=http://$${GEOSERVER_HOST}:$${GEOSERVER_PORT}/geoserver
@@ -87,7 +90,7 @@ steps:
     path: /var/run
   environment:
     DOCKER_HOST: unix:///var/run/docker.sock
-    DATASTORE_PASSWORD:
+    DATABASE_PASSWORD:
       from_secret: postgres_test_password
     GEOSERVER_PASSWORD:
       from_secret: geoserver_test_password
@@ -101,14 +104,19 @@ steps:
   - export env_file=nosetests-${CI_BUILD_NUMBER}.env
   - >-
     (env -i 
-    DATABASE=/work/data/ingest-tests.sqlite
     TEMP_DIR=/work/temp
     INPUT_DIR=/work/tests/test_data
     INSTANCE_PATH=/work/data
+    DB_ENGINE=postgresql
+    DB_HOST=$${POSTGRES_HOST}
+    DB_PORT=$${POSTGRES_PORT}
+    DB_USER=$${DATABASE_USER}
+    DB_NAME=$${DATABASE}
+    DB_PASS=$${DATABASE_PASSWORD}
     POSTGIS_HOST=$${POSTGRES_HOST}
     POSTGIS_PORT=$${POSTGRES_PORT}
-    POSTGIS_USER=$${DATASTORE_USER}
-    POSTGIS_PASS=$${DATASTORE_PASSWORD}
+    POSTGIS_USER=$${DATABASE_USER}
+    POSTGIS_PASS=$${DATABASE_PASSWORD}
     POSTGIS_DB_NAME=$${DATASTORE_DATABASE}
     POSTGIS_DB_SCHEMA=public
     GEOSERVER_URL=http://$${GEOSERVER_HOST}:$${GEOSERVER_PORT}/geoserver
