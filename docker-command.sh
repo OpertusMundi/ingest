@@ -38,10 +38,8 @@ fi
 if [ ! -f "${DB_PASS_FILE}" ]; then
     echo "DB_PASS_FILE does not exist!" 1>&2 && exit 1
 fi
-DB_PASS="$(cat ${DB_PASS_FILE})"
 
 logging_file_config=${LOGGING_FILE_CONFIG}
-
 if [ -n "${LOGGING_ROOT_LEVEL}" ]; then
     logging_file_config="logging-$(echo ${HOSTNAME}| md5sum| head -c10).conf"
     sed -e "/^\[logger_root\]/,/^\[.*/ { s/^level=.*/level=${LOGGING_ROOT_LEVEL}/ }" ${LOGGING_FILE_CONFIG} \
@@ -52,6 +50,7 @@ export FLASK_APP="ingest"
 export SECRET_KEY="$(cat ${SECRET_KEY_FILE} | tr -d '\n')"
 export POSTGIS_PASS="$(cat ${POSTGIS_PASS_FILE} | tr -d '\n')"
 export GEOSERVER_PASS="$(cat ${GEOSERVER_PASS_FILE} | tr -d '\n')"
+DB_PASS="$(cat ${DB_PASS_FILE} | tr -d '\n')"
 export DATABASE_URI="${DB_ENGINE}://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 # Initialize database
@@ -65,8 +64,9 @@ if [ "${FLASK_ENV}" == "development" ]; then
     exec /usr/local/bin/wsgi.py
 fi
 
-num_workers="4"
+num_workers="${NUM_WORKERS:-4}"
 server_port="5000"
+
 gunicorn_ssl_options=
 if [ -n "${TLS_CERTIFICATE}" ] && [ -n "${TLS_KEY}" ]; then
     gunicorn_ssl_options="--keyfile ${TLS_KEY} --certfile ${TLS_CERTIFICATE}"

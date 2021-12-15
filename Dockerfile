@@ -68,7 +68,8 @@ ENV FLASK_APP="ingest" \
     GEOSERVER_USER="ingest" \
     GEOSERVER_PASS_FILE="/secrets/geoserver-password" \
     TLS_CERTIFICATE="" \
-    TLS_KEY=""
+    TLS_KEY="" \
+    NUM_WORKERS="4"
 
 USER flask
 CMD ["/usr/local/bin/docker-command.sh"]
