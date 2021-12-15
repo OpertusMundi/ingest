@@ -42,7 +42,7 @@ services:
       DB_PORT: '5432'
       DB_USER: 'ingest'
       DB_NAME: 'ingest-tests'
-      DB_PASS_FILE: '/secrets/database-password'
+      DB_PASS_FILE: '/work/secrets/database-password'
 
 networks:
   opertusmundi_network:
