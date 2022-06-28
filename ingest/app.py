@@ -174,6 +174,7 @@ app = Flask(__name__, instance_relative_config=True, instance_path=getenv('INSTA
 app.config.from_mapping(
     SECRET_KEY=getenv('SECRET_KEY'),
     SQLALCHEMY_DATABASE_URI=environ['DATABASE_URI'],
+    SQLALCHEMY_ENGINE_OPTIONS={'pool_size': int(environ.get('SQLALCHEMY_POOL_SIZE', '4')), 'pool_pre_ping': True},
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     JSON_SORT_KEYS=False,
     EXECUTOR_TYPE="thread",

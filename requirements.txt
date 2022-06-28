@@ -5,6 +5,9 @@ geoalchemy2>=0.8.4,<0.8.5
 shapely==1.7.1
 psycopg2>=2.8.4,<2.8.6
 pycurl>=7.43.0.6,<7.43.1
+itsdangerous==2.0.1
+Jinja2==3.0.3
+Werkzeug==2.0.2
 Flask==1.1.2
 flask-executor>=0.9.3,<0.9.4
 flask-cors>=3.0.9,<3.1.0

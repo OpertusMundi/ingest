@@ -62,6 +62,7 @@ ENV FLASK_APP="ingest" \
     POSTGIS_DB_SCHEMA="public" \
     POSTGIS_USER="opertusmundi" \
     POSTGIS_PASS_FILE="/secrets/postgis-password" \
+    SQLALCHEMY_POOL_SIZE="4" \
     GEOSERVER_URL="http://geoserver:8080/geoserver" \
     GEOSERVER_WORKSPACE="work_1" \
     GEOSERVER_STORE="postgis" \
