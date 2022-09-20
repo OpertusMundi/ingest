@@ -300,12 +300,12 @@ def health_check():
     try:
         _checkDirectoryWritable(_getTempDir())
     except Exception as exc:
-        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'detail': str(exc)}, 200);
+        return make_response({'status': 'FAILED', 'reason': 'temp directory not writable', 'detail': str(exc)}, 200)
     # Check that we can connect to our PostGIS backend
     try:
         _checkConnectToPostgis()
     except Exception as exc:
-        return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'detail': str(exc)}, 200);
+        return make_response({'status': 'FAILED', 'reason': 'cannot connect to PostGIS backend', 'detail': str(exc)}, 200)
     # Check that we can connect to Database
     try:
         _checkConnectToDB()

@@ -1,4 +1,7 @@
 import geopandas as gpd
+import pandas as pd
+import csv
+from shapely import wkt
 from geoalchemy2 import Geometry, WKTElement
 from sqlalchemy import *
 from sqlalchemy.exc import ProgrammingError
@@ -67,6 +70,16 @@ class Postgres(object):
         with self.engine.connect() as con:
             cur = con.execute('DROP TABLE IF EXISTS "%s"."%s"' % (schema, table))
 
+    @staticmethod
+    def get_delimiter(ds_path: str):
+        """ Returns the delimiter of the csv file """
+        if ds_path.split('.')[-1] != 'csv':
+            return None
+        with open(ds_path) as f:
+            first_line = f.readline()
+            s = csv.Sniffer()
+            return str(s.sniff(first_line).delimiter)
+
     def ingest(self, file, table, schema=None, chunksize=100000, commit=True, replace=False, **kwargs):
         """Creates a DB table and ingests a vector file into it.
 
@@ -96,10 +109,17 @@ class Postgres(object):
         rows = 0
         with self.engine.connect() as con:
             trans = con.begin()
-            while eof == False:
+            while not eof:
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize), **kwargs)
+                    if extension == ".csv":
+                        df = pd.read_csv(file, sep=self.get_delimiter(file))
+                        df['geometry'] = df['wkt'].apply(wkt.loads)
+                        df.drop('wkt', axis=1, inplace=True)  # Drop WKT column
+                        # Geopandas GeoDataFrame
+                        df = gpd.GeoDataFrame(df, geometry='geometry')
+                    else:
+                        df = gpd.read_file(file, rows=slice(i*chunksize, (i+1)*chunksize), **kwargs)
                     length = len(df)
                     if length == 0:
                         eof = True
@@ -124,7 +144,8 @@ class Postgres(object):
                         if_exists = 'append'
                     df.drop('geometry', 1, inplace=True)
                     try:
-                        df.to_sql(table, con=con, schema=schema, if_exists=if_exists, index=False, dtype={'geom': Geometry(gtype, srid=srid)})
+                        df.to_sql(table, con=con, schema=schema, if_exists=if_exists, index=False,
+                                  dtype={'geom': Geometry(gtype, srid=srid)})
                     except ValueError as e:
                         raise ValueError(e)
                     except ProgrammingError as e:
@@ -134,6 +155,8 @@ class Postgres(object):
                             raise InsufficientPrivilege('Permission denied for schema "%s".' % (schema))
                         else:
                             raise e
+                    if extension == ".csv":
+                        eof = True
                     i += 1
 
             if commit:
