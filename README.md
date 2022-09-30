@@ -13,35 +13,55 @@ The package requires at least Python 3.7. First, install and *pyculr*, e.g. for 
 ```
 apt-get install python3-pycurl
 ```
-To install with **pip**:
+
+To install:
 ```
-pip install git+https://github.com/OpertusMundi/ingest.git
+pip install -r requirements.txt
+python setup.py install
 ```
-Initialize database by running:
+
+Initialize database:
 ```
 flask init-db
 ```
 
-The following environment variables should be set:
+The service understands the following environment variables:
 - `FLASK_ENV`: `development` or `production`.
 - `FLASK_APP`: `ingest` (if running as a container, this will be always set).
-- `POSTGIS_HOST`: The PostGIS host to use for ingesting spatial datasets.
-- `POSTGIS_PORT`: The PostGIS host.
-- `POSTGIS_DB_NAME`: The database to use on the PostGIS server.
-- `POSTGIS_DB_SCHEMA`: The table schema to use on the PostGIS database.
-- `POSTGIS_USER`: The username for the PostGIS user.
-- `POSTGIS_PASS`: The password for the PostGIS user.
-- `GEOSERVER_URL`: GeoServer base URL.
-- `GEOSERVER_WORKSPACE` (optional): GeoServer workspace to use. It will be created if not exists. If not set, the default workspace will be used instead.
-- `GEOSERVER_STORE`: GeoServer PostGIS data store name. It will be created if not exists.
-- `GEOSERVER_USER`: GeoServer user name.
-- `GEOSERVER_PASS`: The password for the GeoServer user.
-- `TEMP_DIR` (optional): The location for storing temporary files. If not set, the system temporary path location will be used.
-- `CORS`: List or string of allowed origins
+- `SECRET_KEY`: A random string used to encrypt cookies
 - `LOGGING_CONFIG_FILE`: The logging configuration file.
-- `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO`, `WARNING`.
+- `LOGGING_ROOT_LEVEL` (optional): The level of detail for the root logger; one of `DEBUG`, `INFO` (default), `WARNING`.
+- `CORS`: List or string of allowed origins (`*` by default)
 - `INPUT_DIR`: The input directory; all input paths will be resolved under this directory. 
-- `DATABASE_URI`: `engine://user:pass@host:port/database`
+- `TEMP_DIR` (optional): The location for temporary files. If not set, the system temporary path location will be used.
+- `INSTANCE_PATH`: The location where a Flask instance keeps runtime data
+- `SQLALCHEMY_POOL_SIZE`: The size of the connection pool for the database (`4`, by default)
+- `DATABASE_URL`: An SQLAlchemy-friendly connection URL for the database, e.g. `postgresql://postgres-1:5432/opertusmundi-ingest`
+- `DATABASE_USER`: The username for the database
+- `DATABASE_PASS_FILE`: The file containing the password for the database
+- `GEODATA_SHARDS`: (optional) A comma-separated list of shard identifiers, e.g. `s1,s2`. If sharding is not used, this variable should be empty
+- `POSTGIS_DEFAULT_SCHEMA`: The default database schema for a PostGis store backend (`public`, if not given)
+- `POSTGIS_USER`: The username for a PostGis store backend (common for all shards, if sharding is used)
+- `POSTGIS_PASS_FILE`: The file containing the password for a PostGis store backend (common for all shards, if sharding is used) 
+- `POSTGIS_URL`: An SQLAlchemy-friendly connection URL for the PostGis store backend, e.g. `postgresql://geoserver-postgis-0:5432/geodata`. If sharding is used, this URL is a template that may use the following variables:
+    * `shard`: the shard identifier
+    * `port`: A port for the service on the selected shard (see also `POSTGIS_PORT_MAP`)
+  An example: `postgresql://geoserver-{shard}-postgis-0:{port}/geodata`
+- `POSTGIS_PORT_MAP`: (optional for sharding) A comma-separated list of shard-to-port mappings of the form `shard:port`. An example: `s1:31523,s2:32500`
+
+- `GEOSERVER_DATASTORE`: The Geoserver datastore. It can be a template string that may use the following variables:
+     * `database`: The database name as specified in PostGis connection URL
+     * `schema`: The database schema (same as workspace)
+  The default is: `{database}.{schema}`
+- `GEOSERVER_DEFAULT_WORKSPACE`: A default workspace for Geoserver
+- `GEOSERVER_URL`: The Geoserver base URL e.g. `http://geoserver-1:8080/geoserver`. If sharding is used, this URL is a template that may use the following variables:
+     * `shard`: the shard identifier
+     * `port`: the service on the selected shard (see also `GEOSERVER_PORT_MAP`)
+  An example: `http://geoserver-{shard}-0:{port}/geoserver`
+- `GEOSERVER_PORT_MAP`:  (optional for sharding) A comma-separated list of shard-to-port mappings of the form `shard:port`. An example: `s1:31319,s2:31329`
+- `GEOSERVER_USER`: The username for Geoserver's REST API (common for all shards, if sharding is used)
+- `GEOSERVER_PASS_FILE`: The file containing the password for Geoserver's REST API (common for all shards, if sharding is used)
+
 
 A development server could be started with:
 ```

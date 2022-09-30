@@ -36,7 +36,7 @@ class EncodingValidator:
     """Validates an encoding field."""
     def __init__(self, message=None):
         if not message:
-            message = 'Field must be a valid encoding.'
+            message = 'Field must be a valid encoding'
         self.message = message
 
     def __call__(self, field):
@@ -49,7 +49,7 @@ class EncodingValidator:
 class FileValidator:
     def __init__(self, message=None):
         if not message:
-            message = 'Field must represent a path in the filesystem.'
+            message = 'Field must be a path to an existing file under INPUT_DIR'
         self.message = message
 
     def __call__(self, field):
@@ -64,7 +64,7 @@ class Boolean:
     """Validates a field as a boolean."""
     def __init__(self, message=None):
         if not message:
-            message = 'Field must be boolean.'
+            message = 'Field must be boolean'
         self.message = message
 
     def __call__(self, field):
@@ -79,11 +79,21 @@ class Boolean:
 class Required:
     def __init__(self, message=None):
         if not message:
-            message = 'Field is required.'
+            message = 'Field is required'
         self.message = message
 
     def __call__(self, field):
         if field is None:
+            raise ValidationError(self.message)
+
+class NotEmpty:
+    def __init__(self, message=None):
+        if not message:
+            message = 'Field must not be empty'
+        self.message = message
+
+    def __call__(self, field):
+        if not field:
             raise ValidationError(self.message)
 
 @dataclass
@@ -114,14 +124,15 @@ class Form:
 class IngestForm(Form):
     resource: str = field(default=None, metadata={'validate': [FileValidator()]})
     response: str = field(default='prompt', metadata={'validate': [AnyOf(['prompt', 'deferred'])]})
-    tablename: str = None
-    schema: str = None
+    table: str = field(default=None, metadata={'validate': [NotEmpty()]})
+    workspace: str = field(default=None, metadata={'validate': [NotEmpty()]})
+    shard: str = None
     replace: bool = field(default=False, metadata={'validate': [Boolean()]})
     encoding: str = field(default='utf-8', metadata={'validate': [EncodingValidator()]})
     crs: str = field(default=None, metadata={'validate': [CRSValidator()]})
 
 @dataclass
 class PublishForm(Form):
-    table: str = field(default=None, metadata={'validate': [Required()]})
-    schema: str = None
-    workspace: str = None
+    table: str = field(default=None, metadata={'validate': [NotEmpty()]})
+    workspace: str = field(default=None, metadata={'validate': [NotEmpty()]})
+    shard: str = None

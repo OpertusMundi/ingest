@@ -6,7 +6,7 @@ import logging.config
 # Configure logging before loading the application module
 # see https://flask.palletsprojects.com/en/1.1.x/logging/#basic-configuration
 
-logging.config.fileConfig(os.getenv('LOGGING_FILE_CONFIG'));
+logging.config.fileConfig(os.getenv('LOGGING_FILE_CONFIG', 'logging.conf'));
 
 from ingest.app import app
 

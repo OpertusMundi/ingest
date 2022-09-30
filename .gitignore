@@ -14,8 +14,12 @@ set_env_vars.sh
 secrets/
 *.log
 .env
+.env-*
 docker-compose.yml
 compose.yml
 compose-testing.yml
 netrc
 .idea
+.project
+.pydevproject
+*.swp
