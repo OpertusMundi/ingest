@@ -9,7 +9,7 @@ The service is built on *flask* and *SQLAlchemy*, GeoPandas and GeoAlchemy are u
 
 ## Installation
 
-The package requires at least Python 3.7. First, install and *pyculr*, e.g. for Debian:
+The package requires at least Python 3.8. First, install and *pycurl*, e.g. for Debian:
 ```
 apt-get install python3-pycurl
 ```
@@ -46,6 +46,7 @@ The service understands the following environment variables:
 - `POSTGIS_URL`: An SQLAlchemy-friendly connection URL for the PostGis store backend, e.g. `postgresql://geoserver-postgis-0:5432/geodata`. If sharding is used, this URL is a template that may use the following variables:
     * `shard`: the shard identifier
     * `port`: A port for the service on the selected shard (see also `POSTGIS_PORT_MAP`)
+ 
   An example: `postgresql://geoserver-{shard}-postgis-0:{port}/geodata`
 - `POSTGIS_PORT_MAP`: (optional for sharding) A comma-separated list of shard-to-port mappings of the form `shard:port`. An example: `s1:31523,s2:32500`
 
@@ -57,6 +58,7 @@ The service understands the following environment variables:
 - `GEOSERVER_URL`: The Geoserver base URL e.g. `http://geoserver-1:8080/geoserver`. If sharding is used, this URL is a template that may use the following variables:
      * `shard`: the shard identifier
      * `port`: the service on the selected shard (see also `GEOSERVER_PORT_MAP`)
+     
   An example: `http://geoserver-{shard}-0:{port}/geoserver`
 - `GEOSERVER_PORT_MAP`:  (optional for sharding) A comma-separated list of shard-to-port mappings of the form `shard:port`. An example: `s1:31319,s2:31329`
 - `GEOSERVER_USER`: The username for Geoserver's REST API (common for all shards, if sharding is used)
