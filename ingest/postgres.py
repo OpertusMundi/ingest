@@ -35,8 +35,13 @@ class Postgres(object):
             raise RuntimeError('missing password for PostGis (POSTGIS_PASS or POSTGIS_PASS_FILE)')
         
         url_template = environ['POSTGIS_URL'];
-        port_map = dict(((t[0] or None, int(t[1])) for t in 
-            (e.split(":") for e in environ.get("POSTGIS_PORT_MAP", "").split(","))));
+
+        port_map_str = environ.get("POSTGIS_PORT_MAP")
+        port_map = {}
+        if port_map_str:
+            port_map = dict(((t[0] or None, int(t[1])) for t in 
+                (e.split(":") for e in port_map_str.split(","))));
+        
         default_schema = environ.get("POSTGIS_DEFAULT_SCHEMA", "public");
         
         return Postgres(url_template, username, password, port_map, default_schema);

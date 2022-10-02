@@ -50,8 +50,12 @@ class Geoserver(object):
             raise RuntimeError('missing password for Geoserver (GEOSERVER_PASS or GEOSERVER_PASS_FILE)');
             
         url_template = environ['GEOSERVER_URL'];
-        port_map = dict(((t[0] or None, int(t[1])) for t in 
-            (e.split(":") for e in environ.get("GEOSERVER_PORT_MAP", "").split(","))));
+        
+        port_map_str = environ.get("GEOSERVER_PORT_MAP")
+        port_map = {}
+        if port_map_str:
+            port_map = dict(((t[0] or None, int(t[1])) for t in 
+                (e.split(":") for e in port_map_str.split(","))));
             
         datastore_template = environ['GEOSERVER_DATASTORE'];
         default_workspace = environ['GEOSERVER_DEFAULT_WORKSPACE'];
