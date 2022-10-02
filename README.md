@@ -83,9 +83,9 @@ Once deployed, the OpenAPI JSON is served by the index of the service.
 
 ## Build and run as a container
 
-Copy `.env.example` to `.env` and configure if needed (e.g `FLASK_ENV` variable).
+Copy `.env.example` to `.env` and configure.
 
-Copy `compose.yml.example` to `compose.yml` (or `docker-compose.yml`) and adjust to your needs (e.g. specify volume source locations etc.). You will at least need to configure the network (inside `compose.yml`) to attach to.
+Copy `compose.yml.example` to `compose.yml` and adjust to your needs (e.g. specify volume name for input directory etc.).
 
 For example, you can create a private network named `opertusmundi_network`:
 
@@ -98,19 +98,18 @@ Build:
 Prepare the following files/directories:
 
    * `./secrets/secret_key`: file needed (by Flask) for signing/encrypting session data
-   * `./secrets/postgis/ingest-password`: file containing the password for the PostGIS database user
-   * `./secrets/geoserver/ingest-password`: file containing the password for the Geoserver user
-   * `./secrets/db_pass`: file containing the password for the main database user
+   * `./secrets/postgis/geodata-password`: file containing the password for the PostGIS database user
+   * `./secrets/geoserver/admin-password`: file containing the password for the Geoserver admin user
+   * `./secrets/database-password`: file containing the password for the main database user
    * `./logs`: a directory to keep logs under
    * `./temp`: a directory to be used as temporary storage
-   * `./input`: a directory to be used as the root of input files
 
 Start application:
 
     docker-compose -f compose.yml up
 
 
-## Run tests
+## Run tests *FIXME*
 
 Copy `compose-testing.yml.example` to `compose-testing.yml` and adjust to your needs. This is a just a docker-compose recipe for setting up the testing container.
 

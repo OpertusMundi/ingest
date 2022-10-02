@@ -13,3 +13,4 @@ docker-compose.yml*
 compose.yml
 compose-testing.yml
 .git
+__pycache__

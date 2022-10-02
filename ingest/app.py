@@ -44,14 +44,17 @@ def _getTempDir():
 
 def _databaseUrlFromEnv():
     database_url = sqlalchemy.engine.url.make_url(environ['DATABASE_URL'])
-    database_url.username = environ['DATABASE_USER']
+    
+    username = environ['DATABASE_USER']
+    password = None
     if 'DATABASE_PASS' in environ: 
-        database_url.password = environ['DATABASE_PASS']
+        password = environ['DATABASE_PASS']
     elif 'DATABASE_PASS_FILE' in environ:
-        with open(environ['DATABASE_PASS_FILE'], "r") as f: database_url.password = f.read().strip();
+        with open(environ['DATABASE_PASS_FILE'], "r") as f: password = f.read().strip();
     else:
         raise RuntimeError("missing password for database connection (DATABASE_PASS or DATABASE_PASS_FILE)")
-    return database_url;
+    
+    return database_url.set(username=username, password=password);
 
 def _getWorkingPath(ticket):
     """Returns the working directory for each request."""
@@ -582,6 +585,8 @@ def publish():
     try:
         _publishTable(table_name, schema, workspace, shard)
     except Exception as e:
+        mainLogger.error("Failed to publish table %s.%s on Geoserver workspace [%s] on shard [%s]: %s", 
+            schema, table_name, workspace, shard or '', str(e))
         return make_response({ 'error': str(e) }, 500)
     
     return make_response(ows_service_endpoints, 200)
@@ -877,8 +882,13 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kw
             handle.extractall(src_path)
         src_file = src_path
     
-    result = postgis.ingest(src_file, tablename, schema, shard, replace=replace, **kwargs)
-    
+    try:
+        result = postgis.ingest(src_file, tablename, schema, shard, replace=replace, **kwargs)
+    except Exception as e:
+        mainLogger.error("Failed to ingest file %s into table %s.%s on shard [%s]: %s", 
+            src_file, schema, tablename, shard or '', str(e))
+        raise e
+
     try:
         rmtree(working_path)
     except Exception as e:

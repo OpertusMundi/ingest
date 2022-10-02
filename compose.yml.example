@@ -3,42 +3,39 @@
 version: '3.6'
 
 services:
-
   ingest:
-    image: "opertusmundi/ingest:${VERSION}"
+    image: "opertusmundi/ingest:${VERSION}-dev"
     build:
       context: .
-      args:
-        VERSION: "${VERSION}"
     volumes:
-    - type: 'bind'
+    - type: bind
       source: ./logs
       target: /var/local/ingest/logs
-    #- type: 'bind'
-    #  source: ./logging-syslog.conf
-    #  target: /var/local/ingest/logging.conf
-    #  read_only: true
-    - type: 'bind'
+    - type: bind
+      source: ./logging.conf
+      target: /var/local/ingest/logging.conf
+      read_only: true
+    - type: bind
       source: ./secrets/secret_key
       target: /secrets/secret_key
       read_only: true
-    - type: 'bind'
-      source: ./secrets/postgis/ingest-password
-      target: /secrets/postgis/ingest-password
-      read_only: true
-    - type: 'bind'
-      source: ./secrets/database-password
+    - type: bind
+      source: ${DATABASE_PASS_FILE}
       target: /secrets/database-password
       read_only: true
-    - type: 'bind'
-      source: ./secrets/geoserver/ingest-password
-      target: /secrets/geoserver/ingest-password
+    - type: bind
+      source: ${POSTGIS_PASS_FILE}
+      target: /secrets/postgis-password
       read_only: true
-    - type: 'bind'
-      source: './temp'
+    - type: bind
+      source: ${GEOSERVER_PASS_FILE}
+      target: /secrets/geoserver-password
+      read_only: true
+    - type: bind
+      source: ./temp
       target: /var/local/ingest/temp
-    - type: 'volume'
-      source: 'input'
+    - type: volume
+      source: input
       target: /var/local/ingest/input
       read_only: true
     networks:
@@ -46,39 +43,33 @@ services:
     ports:
     - '5000:5000'
     environment:
-      FLASK_ENV: "${FLASK_ENV}"
-      FLASK_DEBUG: "${FLASK_DEBUG}"
+      TZ: Europe/Athens
       CORS: '*'
       SECRET_KEY_FILE: /secrets/secret_key
-      POSTGIS_HOST: 'postgres-1-opertusmundi'
-      POSTGIS_PORT: '5432'
-      POSTGIS_USER: 'ingest'
-      POSTGIS_DB_NAME: 'geodata'
-      POSTGIS_DB_SCHEMA: 'public'
-      POSTGIS_PASS_FILE: /secrets/postgis/ingest-password
-      GEOSERVER_URL: 'http://geoserver-1-opertusmundi:8080/geoserver'
-      GEOSERVER_USER: 'ingest'
-      GEOSERVER_WORKSPACE: 'work_1'
-      GEOSERVER_STORE: 'postgres-1'
-      GEOSERVER_PASS_FILE: /secrets/geoserver/ingest-password
-      #LOGGING_FILE_CONFIG: 'logging.conf'
-      #LOGGING_ROOT_LEVEL: 'INFO'
-      #RSYSLOG_HOST: rsyslog-1
-      TZ: Europe/Athens
+      LOGGING_FILE_CONFIG: logging.conf
+      LOGGING_ROOT_LEVEL: ${LOGGING_ROOT_LEVEL:-INFO}
       INPUT_DIR: /var/local/ingest/input
       TEMP_DIR: /var/local/ingest/temp
-      DB_ENGINE: 'postgresql'
-      DB_HOST: 'postgres-1-opertusmundi'
-      DB_PORT: '5432'
-      DB_USER: 'ingest'
-      DB_NAME: 'ingest'
-      DB_PASS_FILE: '/secrets/database-password'
-
+      INITIALIZE_DATABASE: 'false'
+      DATABASE_URL: 
+      DATABASE_USER: 
+      DATABASE_PASS_FILE: /secrets/database-password 
+      GEODATA_SHARDS: 
+      GEOSERVER_DATASTORE: 
+      GEOSERVER_DEFAULT_WORKSPACE: 
+      GEOSERVER_PORT_MAP:
+      GEOSERVER_URL:
+      GEOSERVER_USER:
+      GEOSERVER_PASS_FILE: /secrets/geoserver-password
+      POSTGIS_DEFAULT_SCHEMA:
+      POSTGIS_PORT_MAP:
+      POSTGIS_URL:
+      POSTGIS_USER:
+      POSTGIS_PASS_FILE: /secrets/postgis-password
 volumes:
   input:
     external: true
     name: opertusmundi_ingest_input
-
 networks:
   opertusmundi_network:
     external: true

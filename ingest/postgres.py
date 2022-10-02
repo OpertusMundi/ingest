@@ -54,9 +54,7 @@ class Postgres(object):
             port = self.port_map.get(shard) or self.DEFAULT_PORT;
             url = self.url_template.format(shard=shard, port=port);
         u = sqlalchemy.engine.url.make_url(url);
-        u.username = self.username;
-        u.password = self.password;
-        return u;
+        return u.set(username=self.username, password=self.password);
          
     def check(self, shard=None):
         """Check database connection.
@@ -199,7 +197,7 @@ class Postgres(object):
                         df.to_sql(table, con=con, schema=schema, if_exists=if_exists, index=False,
                                   dtype={'geom': Geometry(gtype, srid=srid)})
                     except ValueError as e:
-                        raise ValueError(e)
+                        raise e
                     except sqlalchemy.exc.ProgrammingError as e:
                         if 'InvalidSchemaName' in str(e):
                             raise SchemaException('Schema "%s" does not exist.' % (schema))
