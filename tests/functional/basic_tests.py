@@ -1,20 +1,40 @@
 import logging
 import json
-from os import path, getenv
-from time import sleep
+import os
+import time
+import sqlalchemy
 from uuid import uuid4
 import fiona.errors
+import string
+import random
 
 from ingest.app import app
 from ingest.postgres import Postgres
-from ingest.app import _ingestIntoPostgis, _getWorkingPath
+from ingest.geoserver import Geoserver
+
+postgis = Postgres.makeFromEnv()
+
+geoserver = Geoserver.makeFromEnv()
+
+workspace = os.getenv('GEOSERVER_DEFAULT_WORKSPACE') or str(uuid4())
+
+dirname = os.path.dirname(__file__)
+input_dir = os.path.join(dirname, '..', 'test_data')
+
+
+name_alphabet = string.ascii_lowercase + string.digits
+def _random_name(n):
+    return ''.join(random.choice(name_alphabet) for i in range(n)) 
 
 # Setup/Teardown
 
 def setup_module():
-    print(" == Setting up tests for %s"  % (__name__))
+    print(" == Setting up tests for {0}".format(__name__))
     app.config['TESTING'] = True
-    print(" == Using database at %s"  % (app.config['SQLALCHEMY_DATABASE_URI']))
+    print(" == database URL: {0}".format(app.config['SQLALCHEMY_DATABASE_URI']))
+    print(" == PostGIS database URL: {0!r}".format(postgis.urlFor()))
+    print(" == Geoserver URL: {0!r}".format(geoserver.urlFor()))
+    print(" == workspace: {0}".format(workspace))
     pass
 
 def teardown_module():
@@ -22,10 +42,6 @@ def teardown_module():
     pass
 
 # Tests
-
-dirname = path.dirname(__file__)
-kml = path.join(dirname, '..', 'test_data', 'geo.kml')
-shapefile = path.join(dirname, '..', 'test_data', 'geo.zip')
 
 def test_get_documentation_1():
     with app.test_client() as client:
@@ -44,68 +60,76 @@ def test_get_health_check():
         logging.debug("From /_health: %s" % (r))
         assert r['status'] == 'OK'
 
-def test_postgres_1():
-    """Functional Test: Test checkIfTableExists"""
-    postgres = Postgres()
-    assert postgres.checkIfTableExists('spatial_ref_sys', schema="public")
-
-def test_postgres_2():
-    """Functional Test: Test KML ingest into PostGIS"""
-    postgres = Postgres()
-    schema, table, rows = postgres.ingest(kml, 'test_table', chunksize=1, commit=False)
-    assert schema == getenv('POSTGIS_DB_SCHEMA')
-    assert table == 'test_table'
-    assert rows == 3
-    assert not postgres.checkIfTableExists('test_table')
-
-def test_postgres_3():
-    """Functional Test: Test ingest with unsupported file type."""
-    postgres = Postgres()
-    try:
-        schema, table, rows = postgres.ingest(shapefile, 'test_table', commit=False)
-        assert False
-    except Exception as e:
-        assert isinstance(e, fiona.errors.DriverError)
-
-def test_postgres_4():
-    """Functional Test: Test ingest shapefile, uncompress and cleanup"""
-    ticket = str(uuid4())
-    result = _ingestIntoPostgis(shapefile, ticket)
-    assert 'schema' in result
-    assert 'table' in result
-    assert 'length' in result
-    assert result['length'] == 3
-    assert not path.isdir(_getWorkingPath(ticket))
-
-def test_ingest_1():
-    """Functional Test: Test KML ingest"""
+def test_ingest_kml_prompt():
+    """Functional Test: Test KML resource using a name for existing file"""
+    table_name = "geo_kml_{0}".format(_random_name(10))
+    
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource='geo.kml'))
+        res = client.post('/ingest', data=dict(resource='geo.kml', workspace=workspace, table=table_name))
         assert res.status_code == 200
         r = res.get_json()
-        assert r.get('schema') is not None
-        assert r.get('table') is not None
+        assert r.get('schema') == workspace
+        assert r.get('table') == table_name
         assert r.get('length') == 3
 
-def test_ingest_2():
-    """Functional Test: Test Shapefile ingest; streaming resource"""
+    assert postgis.checkIfTableExists(table_name, workspace)
+
+def test_ingest_kml_prompt_using_upload():
+    """Functional Test: Test KML resource using upload"""
+    table_name = "geo_kml_{0}".format(_random_name(10))
+    input_path = os.path.join(input_dir, 'geo.kml')
+    
     with app.test_client() as client:
-        res = client.post('/ingest', data=dict(resource='geo.zip'))
+        res = client.post('/ingest', data=dict(
+            resource=open(input_path, 'rb'), workspace=workspace, table=table_name))
         assert res.status_code == 200
         r = res.get_json()
-        assert r.get('schema') is not None
-        assert r.get('table') is not None
+        assert r.get('schema') == workspace
+        assert r.get('table') == table_name
+        assert r.get('length') == 3
+    
+    assert postgis.checkIfTableExists(table_name, workspace)
+    
+def test_ingest_shp_prompt():
+    """Functional Test: Test SHP resource using a name for existing file"""
+    table_name = "geo_shp_{0}".format(_random_name(10))
+    
+    with app.test_client() as client:
+        res = client.post('/ingest', data=dict(resource='geo.zip', workspace=workspace, table=table_name))
+        assert res.status_code == 200
+        r = res.get_json()
+        assert r.get('schema') == workspace
+        assert r.get('table') == table_name
         assert r.get('length') == 3
 
-def test_ingest_3():
-    """Functional Test: Test complete ingest functionality"""
+    assert postgis.checkIfTableExists(table_name, workspace)
+
+def test_ingest_shp_prompt_using_upload():
+    """Functional Test: Test SHP resource using upload"""
+    table_name = "geo_shp_{0}".format(_random_name(10))
+    input_path = os.path.join(input_dir, 'geo.zip')
+    
+    with app.test_client() as client:
+        res = client.post('/ingest', data=dict(
+            resource=open(input_path, 'rb'), workspace=workspace, table=table_name))
+        assert res.status_code == 200
+        r = res.get_json()
+        assert r.get('schema') == workspace
+        assert r.get('table') == table_name
+        assert r.get('length') == 3
+
+    assert postgis.checkIfTableExists(table_name, workspace)
+
+def test_ingest_shp_deferred():
+    """Functional Test: Test SHP resource and expect response with ticket"""
+    
+    table_name = "geo_shp_{0}".format(_random_name(10))
     idempotency_key = str(uuid4())
+    
     with app.test_client() as client:
-        res = client.post(
-            '/ingest',
-            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='deferred'),
+        res = client.post('/ingest',
+            data=dict(resource='geo.zip', response='deferred', workspace=workspace, table=table_name),
             headers={'X-Idempotency-Key': idempotency_key},
-            content_type='multipart/form-data'
         )
         assert res.status_code == 202
         r = res.get_json()
@@ -114,7 +138,9 @@ def test_ingest_3():
         assert ticket is not None
         assert endpoint is not None
         assert r.get('type') == 'deferred'
-    sleep(1.0)
+    
+    time.sleep(1.0)
+    
     with app.test_client() as client:
         res = client.get(endpoint)
         assert res.status_code == 200
@@ -130,40 +156,4 @@ def test_ingest_3():
         assert r.get('request') == 'ingest'
         assert r.get('ticket') == ticket
 
-def test_ingest_4():
-    """Functional Test: Test table replacement"""
-    tablename = str(uuid4())
-    with app.test_client() as client:
-        res = client.post(
-            '/ingest',
-            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
-        )
-        assert res.status_code == 200
-    sleep(1.0)
-    with app.test_client() as client:
-        res = client.post(
-            '/ingest',
-            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
-        )
-        assert res.status_code == 500
-    sleep(1.0)
-    with app.test_client() as client:
-        res = client.post(
-            '/ingest',
-            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename, replace='true')
-        )
-        assert res.status_code == 200
 
-def test_ingest_5():
-    """Functional Test: Test drop table"""
-    tablename = str(uuid4())
-    with app.test_client() as client:
-        res = client.post(
-            '/ingest',
-            data=dict(resource=(open(shapefile, 'rb'), 'geo.zip'), response='prompt', tablename=tablename)
-        )
-        assert res.status_code == 200
-    sleep(1.0)
-    with app.test_client() as client:
-        res = client.delete(f'/ingest/{tablename}')
-        assert res.status_code == 204

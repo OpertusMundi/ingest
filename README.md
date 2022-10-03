@@ -10,20 +10,17 @@ The service is built on *flask* and *SQLAlchemy*, GeoPandas and GeoAlchemy are u
 ## Installation
 
 The package requires at least Python 3.8. First, install and *pycurl*, e.g. for Debian:
-```
-apt-get install python3-pycurl
-```
 
-To install:
-```
-pip install -r requirements.txt
-python setup.py install
-```
+    apt-get install python3-pycurl
+
+Setup Python virtual environment:
+    
+    pipenv install
 
 Initialize database:
-```
-flask init-db
-```
+    
+    pipenv run flask init-db
+
 
 The service understands the following environment variables:
 - `FLASK_ENV`: `development` or `production`.
@@ -66,9 +63,13 @@ The service understands the following environment variables:
 
 
 A development server could be started with:
-```
-flask run
-```
+
+    pipenv run flask run
+
+or with:
+
+    pipenv run python wsgi.py
+
 
 ## Usage
 
@@ -85,7 +86,7 @@ Once deployed, the OpenAPI JSON is served by the index of the service.
 
 ## Build and run as a container
 
-Copy `.env.example` to `.env` and configure.
+Copy `compose.env.example` (or `compose-with-shards.env.example`) to `.env` and configure.
 
 Copy `compose.yml.example` to `compose.yml` and adjust to your needs (e.g. specify volume name for input directory etc.).
 
@@ -111,15 +112,15 @@ Start application:
     docker-compose -f compose.yml up
 
 
-## Run tests *FIXME*
+## Run tests
 
-Copy `compose-testing.yml.example` to `compose-testing.yml` and adjust to your needs. This is a just a docker-compose recipe for setting up the testing container.
+Copy `testing.env.example` to `testing.env` and configure.
 
-Build testing container:
+Setup virtual environment with dev dependencies:
 
-    docker-compose -f compose-testing.yml build
+    pipenv install --dev
 
-Run nosetests (in an ephemeral container):
+Run `nosetests` into virtual environment:
 
-    docker-compose -f compose-testing.yml run --rm --user "$(id -u):$(id -g)" nosetests -v
+    PIPENV_DOTENV_LOCATION=testing.env pipenv run nosetests -s -v    
 

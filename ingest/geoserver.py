@@ -71,7 +71,7 @@ class Geoserver(object):
         self.datastore_template = datastore_template
         self.default_workspace = default_workspace
 
-    def urlFor(self, target_path, shard=None):
+    def urlFor(self, target_path="", shard=None):
         """Build an absolute URL for a path
         
         Parameters:

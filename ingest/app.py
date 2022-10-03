@@ -42,7 +42,7 @@ def _getTempDir():
     """Return the temporary directory"""
     return getenv('TEMP_DIR') or tempfile.gettempdir()
 
-def _databaseUrlFromEnv():
+def databaseUrlFromEnv():
     database_url = sqlalchemy.engine.url.make_url(environ['DATABASE_URL'])
     
     username = environ['DATABASE_USER']
@@ -122,7 +122,7 @@ geoserver = Geoserver.makeFromEnv();
 
 # Initialize app
 
-database_url = _databaseUrlFromEnv();
+database_url = databaseUrlFromEnv();
 input_dir = environ['INPUT_DIR'];
 
 app = Flask(__name__, instance_relative_config=True, instance_path=getenv('INSTANCE_PATH'))
@@ -585,7 +585,7 @@ def publish():
     try:
         _publishTable(table_name, schema, workspace, shard)
     except Exception as e:
-        mainLogger.error("Failed to publish table %s.%s on Geoserver workspace [%s] on shard [%s]: %s", 
+        mainLogger.error("Failed to publish table \"%s\".\"%s\" on Geoserver workspace [%s] on shard [%s]: %s", 
             schema, table_name, workspace, shard or '', str(e))
         return make_response({ 'error': str(e) }, 500)
     
@@ -885,7 +885,7 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kw
     try:
         result = postgis.ingest(src_file, tablename, schema, shard, replace=replace, **kwargs)
     except Exception as e:
-        mainLogger.error("Failed to ingest file %s into table %s.%s on shard [%s]: %s", 
+        mainLogger.error("Failed to ingest %s into table \"%s\".\"%s\" on shard [%s]: %s", 
             src_file, schema, tablename, shard or '', str(e))
         raise e
 

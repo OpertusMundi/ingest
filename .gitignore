@@ -13,8 +13,8 @@ set_env_vars.sh
 /logs/
 secrets/
 *.log
-.env
-.env-*
+/.env
+/*.env
 docker-compose.yml
 compose.yml
 compose-testing.yml
