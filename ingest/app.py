@@ -836,7 +836,7 @@ def getTicketByKey(key):
     
     queue = Queue().get(idempotency_key=key)
     if queue is None:
-        return make_response({ 'error': 'No job found for key [{0}]'.format(idempotency_key) }, 404)
+        return make_response({ 'error': 'No job found for key [{0}]'.format(key) }, 404)
     
     return make_response({'ticket': queue['ticket'], 'request': queue['request']}, 200)
 
