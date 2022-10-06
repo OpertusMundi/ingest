@@ -526,18 +526,31 @@ def publish():
                 - workspace
       responses:
         200:
-          description: Publication completed.
+          description: The layer was published
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  wms:
+                  wmsBase:
                     type: string
-                    description: WMS endpoint
-                  wfs:
+                    description: The WMS endpoint
+                  wmsDescribeLayer:
                     type: string
-                    description: WFS endpoint
+                    description: The WMS URL for a `DescribeLayer` request
+                  wmsGetMap:
+                    type: string
+                    description: An example WMS URL for a `GetMap` request. Note that this is not a valid request as it lacks several
+                      required query parameters (as `bbox`, `width` and `height`)
+                  wfsBase:
+                    type: string
+                    description: The WFS endpoint
+                  wfsDescribeFeatureType:
+                    type: string
+                    description: The WFS URL for a `DescribeFeatureType` request
+                  wfsGetFeature:
+                    type: string
+                    description: The WFS URL for a `GetFeature` request for all contained features (records)
         400:
           description: Encountered a validation error
           content:
@@ -588,7 +601,7 @@ def publish():
         mainLogger.error("Failed to publish table \"%s\".\"%s\" on Geoserver workspace [%s] on shard [%s]: %s", 
             schema, table_name, workspace, shard or '', str(e))
         return make_response({ 'error': str(e) }, 500)
-    
+
     return make_response(ows_service_endpoints, 200)
 
 @app.route("/ingest", methods=["DELETE"])
@@ -907,8 +920,14 @@ def _getGeoserverServiceEndpoints(workspace, layer):
         (dict) The GeoServer layer endpoints.
     """
     return {
-        "wms": '{0}/wms?service=WMS&request=GetMap&layers={0}:{1}'.format(workspace, layer),
-        "wfs": '{0}/ows?service=WFS&request=GetFeature&typeName={0}:{1}'.format(workspace, layer)
+        
+        "wmsBase": '{0}/wms'.format(workspace),
+        "wmsDescribeLayer": '{0}/wms?version=1.1.1&request=DescribeLayer&layers={1}'.format(workspace, layer), 
+        "wmsGetMap": '{0}/wms?version=1.1.1&request=GetMap&layers={1}'.format(workspace, layer),
+
+        "wfsBase": '{0}/wfs'.format(workspace),
+        "wfsDescribeFeatureType": '{0}/wfs?version=2.0.0&request=DescribeFeatureType&typeName={1}'.format(workspace, layer),
+        "wfsGetFeature": '{0}/wfs?version=2.0.0&request=GetFeature&typeName={1}'.format(workspace, layer)
     }
 
 def _publishTable(table, schema, workspace, shard=None):

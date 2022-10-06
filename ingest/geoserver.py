@@ -87,12 +87,14 @@ class Geoserver(object):
             base_url = self.url_template;
             
         p = urllib.parse.urlparse(base_url);
-        return p._replace(path=posixpath.join(p.path, 'rest', target_path)).geturl();    
+        if target_path: 
+            p = p._replace(path=posixpath.join(p.path, target_path));
+        return p.geturl()
 
     def _get(self, target_path, shard=None):
         """GET request to GeoServer.
         Parameters:
-            target_path (string): relative path (to REST base path) for the request.
+            target_path (string): relative path (to base URL) for the request.
         Raises:
             Exception: In case HTTP code is other than 200.
         """
@@ -114,10 +116,10 @@ class Geoserver(object):
     def _post(self, target_path, xml_payload, shard=None):
         """POST request to GeoServer.
         Parameters:
-            target_path (str): The relative (to REST url) endpoint for the request.
+            target_path (str): The relative (to base URL) endpoint for the request.
             xml_payload (str): The XML payload that will be passed to GeoServer.
         Raises:
-            Exception: In case HTTP code is other than 2**.
+            Exception: In case HTTP code is greater than 2xx.
         """
         
         target_url = self.urlFor(target_path, shard);
@@ -130,7 +132,7 @@ class Geoserver(object):
         conn.setopt(pycurl.READFUNCTION, _DataProvider(xml_payload).read_cb)
         conn.setopt(pycurl.POST, 1)
         
-        conn.perform()
+        conn.perform_rs()
         http_code = conn.getinfo(pycurl.HTTP_CODE)
         conn.close()
         if http_code > 299:
@@ -139,7 +141,7 @@ class Geoserver(object):
     def _delete(self, target_path, shard=None):
         """DELETE request to GeoServer.
         Parameters:
-            target_path (str): The relative (to REST url) endpoint for the request.
+            target_path (str): The relative (to base url) endpoint for the request.
             shard (str):
         Raises:
             Exception: In case HTTP code is other than 2**
@@ -152,7 +154,7 @@ class Geoserver(object):
         conn.setopt(conn.URL, target_url)
         conn.setopt(pycurl.CUSTOMREQUEST, "DELETE")
         
-        conn.perform()
+        conn.perform_rs()
         http_code = conn.getinfo(pycurl.HTTP_CODE)
         conn.close()
         if http_code > 299:
@@ -165,7 +167,7 @@ class Geoserver(object):
         Returns:
             (string) Rest URL
         """
-        url, code, res = self._get('about/system-status', shard)
+        url, code, res = self._get('rest/about/system-status', shard)
         res = json.loads(res)
         if not 'metrics' in res.keys():
             raise Exception('Metrics not found.')
@@ -190,7 +192,7 @@ class Geoserver(object):
         xml_payload = "<workspace><name>{0}</name></workspace>".format(workspace);
         
         try:
-            self._post("workspaces", xml_payload, shard)
+            self._post("rest/workspaces", xml_payload, shard)
         except RequestFailedException as e:
             if e.status_code == 409: # conflict
                 pass # workspace already exists
@@ -204,7 +206,7 @@ class Geoserver(object):
         """Creates (if it does not exist) a PostGis datastore in a GeoServer workspace."""
         
         try:
-            return self._get('workspaces/{0}/datastores/{1}.json'.format(workspace, name), shard)
+            return self._get('rest/workspaces/{0}/datastores/{1}.json'.format(workspace, name), shard)
         except RequestFailedException as e:
             if e.status_code == 404:
                 pass
@@ -228,22 +230,22 @@ class Geoserver(object):
         </dataStore>
         '''.format(name=name, db_url=db_url, db_schema=db_schema);
         
-        self._post('workspaces/{0}/datastores'.format(workspace), xml_payload, shard)
+        self._post('rest/workspaces/{0}/datastores'.format(workspace), xml_payload, shard)
         
     def publish(self, workspace, datastore, table, shard=None):
         """Publish a layer from a datastore."""
         
         xml_payload = "<featureType><name>{0}</name></featureType>".format(table)
-        target_path = 'workspaces/{0}/datastores/{1}/featuretypes'.format(workspace, datastore)
+        target_path = 'rest/workspaces/{0}/datastores/{1}/featuretypes'.format(workspace, datastore)
         self._post(target_path, xml_payload, shard)
 
     def unpublish(self, workspace, datastore, layer, shard=None):
         if not self.checkIfLayerExists(workspace, layer, shard):
             return
         
-        target_path = "layers/{0}:{1}.xml".format(workspace, layer) 
+        target_path = "rest/layers/{0}:{1}.xml".format(workspace, layer) 
         self._delete(target_path, shard)
         
-        target_path = 'workspaces/{0}/datastores/{1}/featuretypes/{2}.xml'.format(workspace, datastore, layer)
+        target_path = 'rest/workspaces/{0}/datastores/{1}/featuretypes/{2}.xml'.format(workspace, datastore, layer)
         self._delete(target_path, shard)
 
