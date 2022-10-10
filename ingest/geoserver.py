@@ -35,6 +35,8 @@ class Geoserver(object):
     """
     
     DEFAULT_PORT = 8080
+
+    WORKSPACE_URI_PREFIX = "urn:topio.market:workspaces/"
     
     @classmethod
     def makeFromEnv(cls):
@@ -137,7 +139,26 @@ class Geoserver(object):
         conn.close()
         if http_code > 299:
             raise RequestFailedException(http_code, "POST", target_url)
-
+    
+    def _put(self, target_path, xml_payload, shard=None):
+        """PUT request to Geoserver (see POST)"""
+        
+        target_url = self.urlFor(target_path, shard);
+        
+        conn = pycurl.Curl()
+        conn.setopt(pycurl.USERPWD, self.userpwd)
+        conn.setopt(conn.URL, target_url)
+        conn.setopt(pycurl.HTTPHEADER, ["Content-type: text/xml"])
+        conn.setopt(pycurl.POSTFIELDSIZE, len(xml_payload))
+        conn.setopt(pycurl.READFUNCTION, _DataProvider(xml_payload).read_cb)
+        conn.setopt(pycurl.PUT, 1)
+        
+        conn.perform_rs()
+        http_code = conn.getinfo(pycurl.HTTP_CODE)
+        conn.close()
+        if http_code > 299:
+            raise RequestFailedException(http_code, "PUT", target_url)
+    
     def _delete(self, target_path, shard=None):
         """DELETE request to GeoServer.
         Parameters:
@@ -187,17 +208,28 @@ class Geoserver(object):
         return exists
 
     def createWorkspaceIfNotExists(self, workspace, shard=None):
-        """Creates (if does not exist) a workspace in GeoServer"""
-        
+        """Creates (if does not exist) a workspace and the corresponding namespace
+        """
+
         xml_payload = "<workspace><name>{0}</name></workspace>".format(workspace);
-        
         try:
             self._post("rest/workspaces", xml_payload, shard)
         except RequestFailedException as e:
             if e.status_code == 409: # conflict
-                pass # workspace already exists
+                return # early return: workspace already exists
             else:
                 raise e
+
+        # The workspace was just created: update corresponding namespace
+
+        xml_payload = '''
+        <namespace>
+            <prefix>{0}</prefix>
+            <isolated>true</isolated>
+            <uri>{1}{0}</uri>
+        </namespace>
+        '''.format(workspace, self.WORKSPACE_URI_PREFIX)
+        self._put("rest/namespaces/{0}".format(workspace), xml_payload, shard)
 
     def datastoreName(self, db_url, db_schema, shard=None):
         return self.datastore_template.format(database=db_url.database, schema=db_schema)
