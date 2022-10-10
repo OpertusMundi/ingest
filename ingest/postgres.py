@@ -214,7 +214,7 @@ class Postgres(object):
                         eof = True
                     i += 1
             
-            logger.info("Processed all %d rows for table %s.%s", rows, schema, table)    
+            logger.info("Processed all %d rows for table \"%s\".\"%s\" on shard [%s]", rows, schema, table, shard or '')
 
             if commit:
                 trans.commit()

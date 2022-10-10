@@ -182,7 +182,7 @@ def _afterRequest(response):
     Log only POST requests. If request has been deferred, the queue job is responsible for logging.
     """
     
-    if request.method != 'POST' or response.status_code in [202, 400, 500]:
+    if request.method != 'POST' or response.status_code in [202, 400, 500] or (not hasattr(g, 'session')):
         return response
 
     ticket = g.session['ticket']
@@ -898,13 +898,17 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kw
     try:
         result = postgis.ingest(src_file, tablename, schema, shard, replace=replace, **kwargs)
     except Exception as e:
-        mainLogger.error("Failed to ingest %s into table \"%s\".\"%s\" on shard [%s]: %s", 
+        mainLogger.error("Failed to ingest %s into PostGIS table \"%s\".\"%s\" on shard [%s]: %s", 
             src_file, schema, tablename, shard or '', str(e))
         raise e
+
+    mainLogger.info("Ingested %s into PostGIS table \"%s\".\"%s\" on shard [%s]", 
+        src_file, schema, tablename, shard or '')
 
     try:
         rmtree(working_path)
     except Exception as e:
+        mainLogger.warning("Failed to clean temporary files [ticket=%s]", ticket)
         pass
     
     return dict(zip(('schema', 'table', 'length'), result))
@@ -941,6 +945,7 @@ def _publishTable(table, schema, workspace, shard=None):
     geoserver.createWorkspaceIfNotExists(workspace, shard)
     geoserver.createDatastoreIfNotExists(datastore, workspace, database_url, schema, shard)
     geoserver.publish(workspace, datastore, table, shard)
+    mainLogger.info("Published layer %s:%s on shard [%s]", workspace, table, shard or '')
 
 def _unpublishTable(table, schema, workspace, shard=None):
     """Unpublish layer (derived from PostGis table) from Geoserver"""
@@ -951,6 +956,7 @@ def _unpublishTable(table, schema, workspace, shard=None):
     datastore = geoserver.datastoreName(database_url, schema, shard)
     
     geoserver.unpublish(workspace, datastore, table, shard)
+    mainLogger.info("Unpublished layer %s:%s from shard [%s]", workspace, table, shard or '')
 
 #
 # Exception handlers
