@@ -443,6 +443,9 @@ def ingest():
     if not form.validate():
         return make_response({ 'errors': form.errors }, 400)
 
+    if form.shard and (form.shard not in geodata_shards):
+        return make_response({ 'errors': { 'shard': 'bad identifier [{0}]'.format(form.shard) } }, 400)
+
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
         src_file = path.join(environ['INPUT_DIR'], form.resource)
@@ -577,6 +580,9 @@ def publish():
     form = PublishForm(**request.form)
     if not form.validate():
         return make_response({ 'errors': form.errors }, 400)
+    
+    if form.shard and (form.shard not in geodata_shards):
+        return make_response({ 'errors': { 'shard': 'bad identifier ({0})'.format(form.shard) } }, 400)
     
     table_name = form.table
     schema = form.workspace
