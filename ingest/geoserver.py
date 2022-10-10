@@ -174,7 +174,7 @@ class Geoserver(object):
         return url 
 
     def checkIfLayerExists(self, workspace, layer, shard=None):
-        target_path = 'workspaces/{0}/layers/{1}'.format(workspace, layer)
+        target_path = 'rest/workspaces/{0}/layers/{1}'.format(workspace, layer)
         
         exists = True
         try:
