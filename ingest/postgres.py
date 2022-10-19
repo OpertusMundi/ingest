@@ -9,13 +9,20 @@ from os import path, environ
 import warnings
 
 from .logging import mainLogger
-logger = mainLogger.getChild('postgres');
+logger = mainLogger.getChild('postgres')
+
+
+class GeometricColumnNotFound(Exception):
+    pass
+
 
 class SchemaException(Exception):
     pass
 
+
 class InsufficientPrivilege(Exception):
     pass
+
 
 class Postgres(object):
     """Creates a connection to PostgreSQL database"""
@@ -122,7 +129,8 @@ class Postgres(object):
                 index.append(col)
         return index
 
-    def ingest(self, input_path, table, schema, shard=None, chunksize=5000, commit=True, replace=False, **kwargs):
+    def ingest(self, input_path, table, schema, shard=None, csv_geom_column_name='wkt',
+               chunksize=5000, commit=True, replace=False, **kwargs):
         """Creates a DB table and ingests a vector file into it.
 
         It reads a vector file with geopandas (fiona) and writes the attributes into a database table.
@@ -134,6 +142,7 @@ class Postgres(object):
             table (str): The table name (it will be created if does not exist).
             schema (str): The database schema
             shard (str): The shard identifier, or None if no sharding is used
+            csv_geom_column_name (str): The geometric column name in the case of a csv file
             chunksize (int): Number of records that will be read from the file in each turn.
             commit (bool, optional): If False, the database changes will roll back.
             replace (bool, optional): If True, the table will be replace if it exists.
@@ -146,8 +155,8 @@ class Postgres(object):
         
         schema = schema or self.default_schema
         
-        url = self.urlFor(shard);
-        engine = sqlalchemy.create_engine(url);
+        url = self.urlFor(shard)
+        engine = sqlalchemy.create_engine(url)
         
         extension = path.splitext(input_path)[1]
         if extension == '.kml':
@@ -165,9 +174,13 @@ class Postgres(object):
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
                     if extension == ".csv":
-                        df = pd.read_csv(input_path, sep=self._sniffCsvDelimiter(input_path))
-                        df['geometry'] = df['wkt'].apply(wkt.loads)
-                        df.drop('wkt', axis=1, inplace=True)  # Drop WKT column
+                        try:
+                            df = pd.read_csv(input_path, sep=self._sniffCsvDelimiter(input_path))
+                            df['geometry'] = df[csv_geom_column_name].apply(wkt.loads)
+                        except KeyError:
+                            raise GeometricColumnNotFound(f'{csv_geom_column_name} is not the column containing'
+                                                          f' the geometric information')
+                        df.drop(csv_geom_column_name, axis=1, inplace=True)  # Drop WKT column
                         # Geopandas GeoDataFrame
                         df = gpd.GeoDataFrame(df, geometry='geometry')
                     else:

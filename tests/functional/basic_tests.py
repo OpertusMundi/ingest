@@ -25,7 +25,7 @@ geoserver = Geoserver.makeFromEnv()
 geoserver_base_url = geoserver.urlFor("")
 geoserver_base_url_p = urllib.parse.urlparse(geoserver_base_url)
 
-workspace = geoserver.default_workspace or ('_' + str(uuid4()))
+workspace = geoserver.default_workspace or ('_' + str(uuid.uuid4()))
 
 dirname = os.path.dirname(__file__)
 input_dir = os.path.join(dirname, '..', 'test_data')

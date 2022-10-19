@@ -120,6 +120,7 @@ class Form:
                     self._errors[f.name] = [str(e)]
         return len(self._errors) == 0
 
+
 @dataclass
 class IngestForm(Form):
     resource: str = field(default=None, metadata={'validate': [FileValidator()]})
@@ -130,6 +131,8 @@ class IngestForm(Form):
     replace: bool = field(default=False, metadata={'validate': [Boolean()]})
     encoding: str = field(default='utf-8', metadata={'validate': [EncodingValidator()]})
     crs: str = field(default=None, metadata={'validate': [CRSValidator()]})
+    geom: str = field(default='wkt', metadata={'validate': [CRSValidator()]})
+
 
 @dataclass
 class PublishForm(Form):

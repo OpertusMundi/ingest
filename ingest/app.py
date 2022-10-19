@@ -166,15 +166,17 @@ def _prepareSession():
 
     return session
 
-def enqueue(src_file, ticket, tablename, schema, shard=None, replace=None, **kwargs):
+
+def enqueue(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=None, **kwargs):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
     try:
-        result = _ingest(src_file, ticket, tablename, schema, shard, replace=replace, **kwargs)
+        result = _ingest(src_file, ticket, tablename, schema, shard, csv_geom_column_name, replace=replace, **kwargs)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     rows = result.pop('length')
     return (ticket, json.dumps(result), 1, None, rows)
+
 
 @app.after_request
 def _afterRequest(response):
@@ -278,6 +280,7 @@ def healthCheck():
         return make_response({'status': 'FAILED', 'reason': 'cannot connect to GeoServer REST API.', 'detail': str(exc)}, 200)
     return make_response({'status': 'OK'}, 200)
 
+
 @app.route("/ingest", methods=["POST"])
 def ingest():
     """The ingest endpoint.
@@ -329,6 +332,9 @@ def ingest():
                 crs:
                   type: string
                   description: CRS of the dataset.
+                geom:
+                  type: string
+                  description: The column name that contains the geometric information (In the case of a csv file)
               required:
                 - resource
                 - table
@@ -441,10 +447,10 @@ def ingest():
 
     form = IngestForm(**request.form)
     if not form.validate():
-        return make_response({ 'errors': form.errors }, 400)
+        return make_response({'errors': form.errors}, 400)
 
     if form.shard and (form.shard not in geodata_shards):
-        return make_response({ 'errors': { 'shard': 'bad identifier [{0}]'.format(form.shard) } }, 400)
+        return make_response({'errors': {'shard': 'bad identifier [{0}]'.format(form.shard)}}, 400)
 
     # Form the source full path of the uploaded file
     if request.values.get('resource') is not None:
@@ -453,10 +459,10 @@ def ingest():
         try:
             resource = request.files['resource']
         except KeyError:
-            return make_response({ 'errors' : { 'resource': [ 'expected a file upload field' ] } }, 400)
+            return make_response({'errors': {'resource': ['expected a file upload field']}}, 400)
         if resource is None:
             mainLogger.info('Client error: %s', 'resource not uploaded')
-            return make_response({ 'errors' : { 'resource': [ 'file was not uploaded' ] } }, 400)
+            return make_response({'errors': {'resource': ['file was not uploaded']}}, 400)
 
     session = _prepareSession()
     g.session = session
@@ -477,19 +483,21 @@ def ingest():
 
     table_name = form.table
     schema = form.workspace
-    shard = form.shard    
+    shard = form.shard
+    csv_geom_column_name = form.geom
 
     if form.response == 'prompt':
         g.response_type = 'prompt'
         try:
-            result = _ingest(src_file, ticket, table_name, schema, shard, replace=replace, **read_options)
+            result = _ingest(src_file, ticket, table_name, schema, shard, csv_geom_column_name,
+                             replace=replace, **read_options)
         except Exception as e:
             return make_response({ 'error': str(e) }, 400)
         return make_response({**result, "type": form.response}, 200)
     else:
         g.response_type = 'deferred'
-        future = executor.submit(enqueue, 
-            src_file, ticket, table_name, schema, shard, replace=replace, **read_options)
+        future = executor.submit(enqueue, src_file, ticket, table_name, schema, shard, csv_geom_column_name,
+                                 replace=replace, **read_options)
         future.add_done_callback(_executorCallback)
         return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": form.response}, 202)
 
@@ -591,8 +599,8 @@ def publish():
     
     if not postgis.checkIfTableExists(table_name, schema, shard):
         err_message = 'The specified table [{0}] is expected to be found in schema [{1}] (on shard [{2}])'.format(
-            table, schema, shard) 
-        return make_response({ 'error': err_message }, 400)
+            table_name, schema, shard)
+        return make_response({'error': err_message}, 400)
     
     ows_service_endpoints = _getGeoserverServiceEndpoints(workspace, table_name)
     
@@ -659,14 +667,15 @@ def drop():
     if geoserver.checkIfLayerExists(workspace, table, shard):
         err_message = 'Cannot drop table {0}.{1} (on shard [{2}]) because a layer depends on that table'.format(
             schema, table, shard or '')
-        return make_response({ 'error': err_message }, 400)
+        return make_response({'error': err_message}, 400)
     
     try:
         postgis.dropTable(table, schema, shard)
     except Exception as e:
-        return make_response({ 'error': str(e) }, 500)
+        return make_response({'error': str(e)}, 500)
     
     return '', 204
+
 
 @app.route("/publish", methods=["DELETE"])
 def unpublish():
@@ -870,7 +879,7 @@ with app.test_request_context():
     spec.path(view=unpublish)
 
 
-def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kwargs):
+def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name='wkt', replace=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
 
     Parameters:
@@ -879,6 +888,7 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kw
         tablename (str): target table name
         schema (str): database schema.
         shard (str): shard indentifier, or None if no sharding is used
+        csv_geom_column_name (str): The geometric column name in the case of a csv file
         replace (bool, optional): if True, the table will be replaced if it exists.
         **kwargs: additional arguments for GeoPandas read file.
 
@@ -902,14 +912,14 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, replace=False, **kw
         src_file = src_path
     
     try:
-        result = postgis.ingest(src_file, tablename, schema, shard, replace=replace, **kwargs)
+        result = postgis.ingest(src_file, tablename, schema, shard, csv_geom_column_name, replace=replace, **kwargs)
     except Exception as e:
-        mainLogger.error("Failed to ingest %s into PostGIS table \"%s\".\"%s\" on shard [%s]: %s", 
-            src_file, schema, tablename, shard or '', str(e))
+        mainLogger.error("Failed to ingest %s into PostGIS table \"%s\".\"%s\" on shard [%s]: %s",
+                         src_file, schema, tablename, shard or '', str(e))
         raise e
 
-    mainLogger.info("Ingested %s into PostGIS table \"%s\".\"%s\" on shard [%s]", 
-        src_file, schema, tablename, shard or '')
+    mainLogger.info("Ingested %s into PostGIS table \"%s\".\"%s\" on shard [%s]",
+                    src_file, schema, tablename, shard or '')
 
     try:
         rmtree(working_path)
