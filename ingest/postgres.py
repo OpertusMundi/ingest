@@ -180,7 +180,6 @@ class Postgres(object):
                         except KeyError:
                             raise GeometricColumnNotFound(f'{csv_geom_column_name} is not the column containing'
                                                           f' the geometric information')
-                        df.drop(csv_geom_column_name, axis=1, inplace=True)  # Drop WKT column
                         # Geopandas GeoDataFrame
                         df = gpd.GeoDataFrame(df, geometry='geometry')
                     else:
