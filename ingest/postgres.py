@@ -1,3 +1,5 @@
+from random import sample
+
 import geopandas as gpd
 import pandas as pd
 import csv
@@ -129,7 +131,33 @@ class Postgres(object):
                 index.append(col)
         return index
 
-    def ingest(self, input_path, table, schema, shard=None, csv_geom_column_name='wkt',
+    @staticmethod
+    def _findCSVGeomColumn(df) -> str:
+        """Detect the name of the column containing the geometric information"""
+        NUMBER_OF_SAMPLES = 1000
+        IS_GEOM_THRESHOLD = 0.9
+        SET_OF_ACCEPTABLE_SHAPES = ['point', 'linestring', 'multipoint', 'multilinestring',
+                                    'polygon', 'multipolygon', 'geometrycollection', 'linearring']
+
+        def is_geom(column_data):
+            if column_data.dtype != 'object':
+                return False
+            try:
+                matches = 0
+                for row in sample(list(column_data), NUMBER_OF_SAMPLES):
+                    is_shape = row.strip().lower().split('(')[0].strip() in SET_OF_ACCEPTABLE_SHAPES
+                    if row.strip().endswith(')') and is_shape:
+                        matches += 1
+                return matches > IS_GEOM_THRESHOLD * NUMBER_OF_SAMPLES
+            except AttributeError:
+                return False
+
+        for column in df.columns:
+            if is_geom(df[column]):
+                return column
+        return 'wkt'
+
+    def ingest(self, input_path, table, schema, shard=None, csv_geom_column_name=None,
                chunksize=5000, commit=True, replace=False, **kwargs):
         """Creates a DB table and ingests a vector file into it.
 
@@ -174,8 +202,10 @@ class Postgres(object):
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
                     if extension == ".csv":
+                        df = pd.read_csv(input_path, sep=self._sniffCsvDelimiter(input_path))
+                        if csv_geom_column_name is None:
+                            csv_geom_column_name = self._findCSVGeomColumn(df)
                         try:
-                            df = pd.read_csv(input_path, sep=self._sniffCsvDelimiter(input_path))
                             df['geometry'] = df[csv_geom_column_name].apply(wkt.loads)
                         except KeyError:
                             raise GeometricColumnNotFound(f'{csv_geom_column_name} is not the column containing'

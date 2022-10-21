@@ -879,7 +879,7 @@ with app.test_request_context():
     spec.path(view=unpublish)
 
 
-def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name='wkt', replace=False, **kwargs):
+def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
 
     Parameters:
