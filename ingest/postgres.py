@@ -151,8 +151,16 @@ class Postgres(object):
                 return matches > IS_GEOM_THRESHOLD * NUMBER_OF_SAMPLES
             except AttributeError:
                 return False
-
-        for column in df.columns:
+        schema = df.columns
+        if 'wkt' in schema:
+            return 'wkt'
+        elif 'WKT' in schema:
+            return 'WKT'
+        elif 'geometry' in schema:
+            return 'geometry'
+        elif 'GEOMETRY' in schema:
+            return 'GEOMETRY'
+        for column in schema:
             if is_geom(df[column]):
                 return column
         return 'wkt'
