@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='ingest',
-    version='0.3.0',
+    version='0.3.1',
     description='Ingest SHP/KML into postgis/geoserver',
     author='Pantelis Mitropoulos',
     author_email='pmitropoulos@getmap.gr',
