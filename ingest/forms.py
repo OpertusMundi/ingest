@@ -7,7 +7,7 @@ class CRSValidator:
     """Validates CRS fields."""
     def __init__(self, message=None):
         if not message:
-            message = 'Field must be a valid CRS.'
+            message = 'Field must be a valid CRS'
         self.message = message
 
     def __call__(self, field):
@@ -17,8 +17,8 @@ class CRSValidator:
             return
         try:
             pyproj.crs.CRS.from_user_input(field)
-        except CRSError:
-            raise ValidationError(self.message)
+        except CRSError as ex:
+            raise ValidationError(self.message + ": " + str(ex))
 
 class AnyOf:
     """Validates a field against a closed dictionary"""

@@ -924,7 +924,7 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_nam
     try:
         rmtree(working_path)
     except Exception as e:
-        mainLogger.warning("Failed to clean temporary files [ticket=%s]", ticket)
+        mainLogger.warning("Failed to clean temporary files [ticket=%s]: %s", ticket, str(e))
         pass
     
     return dict(zip(('schema', 'table', 'length'), result))
