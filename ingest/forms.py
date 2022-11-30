@@ -16,6 +16,11 @@ class CRSValidator:
         if field is None:
             return
         try:
+            # parse as an integer EPSG code
+            field = int(field)
+        except ValueError as ex:
+            pass # nevermind, try to parse as string
+        try:
             pyproj.crs.CRS.from_user_input(field)
         except CRSError as ex:
             raise ValidationError(self.message + ": " + str(ex))
