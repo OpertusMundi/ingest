@@ -1,12 +1,11 @@
 # vim: set syntax=dockerfile:
 
-FROM continuumio/miniconda3:4.10.3 AS build-stage-1
-
-COPY conda-env.yml /environment.yml
-RUN conda env create -n env1
-
-# see https://pythonspeed.com/articles/conda-docker-image-size/ 
-RUN conda install -q -y -c conda-forge conda-pack 
+FROM opertusmundi/ingest-base:0.3 AS build-stage-1
+# or ... (see base.dockerfile)
+#FROM continuumio/miniconda3:4.10.3 AS build-stage-1
+#COPY conda-env.yml /environment.yml
+#RUN conda env create -n env1
+#RUN conda install -q -y -c conda-forge conda-pack 
 
 WORKDIR /usr/local/ingest
 COPY setup.py requirements.txt requirements-production.txt ./

@@ -1,15 +1,47 @@
 ---
+kind: pipeline
+type: docker
+name: prepare-base-image
 
+trigger:
+  ref:
+  - 'refs/tags/*-base'
+
+
+steps:
+
+- name: publish-image
+  image: plugins/docker
+  when:
+    event:
+    - tag
+  settings:
+    dockerfile: base.dockerfile
+    context: .
+    debug: true
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    repo: opertusmundi/ingest-base
+    tags:
+    - "${DRONE_SEMVER_SHORT}"
+    - "${DRONE_SEMVER_MAJOR}.${DRONE_SEMVER_MINOR}"
+    mirror: http://registry-mirror:5000
+
+
+---
 kind: pipeline
 type: docker
 name: default
 
+trigger:
+  ref:
+    exclude:
+    - 'refs/tags/*-base'
+
 environment:
   {}
-
-#
-# Steps
-#
 
 steps:
 

@@ -7,7 +7,7 @@ class CRSValidator:
     """Validates CRS fields."""
     def __init__(self, message=None):
         if not message:
-            message = 'Field must be a valid CRS.'
+            message = 'Field must be a valid CRS'
         self.message = message
 
     def __call__(self, field):
@@ -16,9 +16,14 @@ class CRSValidator:
         if field is None:
             return
         try:
+            # parse as an integer EPSG code
+            field = int(field)
+        except ValueError as ex:
+            pass # nevermind, try to parse as string
+        try:
             pyproj.crs.CRS.from_user_input(field)
-        except CRSError:
-            raise ValidationError(self.message)
+        except CRSError as ex:
+            raise ValidationError(self.message + ": " + str(ex))
 
 class AnyOf:
     """Validates a field against a closed dictionary"""

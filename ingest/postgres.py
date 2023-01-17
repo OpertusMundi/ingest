@@ -235,8 +235,17 @@ class Postgres(object):
                     logger.info("Processing a chunk of %d rows for table %s.%s", length, schema, table)
                     
                     rows = rows + length
+
                     crs = kwargs.pop('crs', None)
-                    crs = pyproj.crs.CRS.from_user_input(crs) if crs is not None else df.crs
+                    if crs is None:
+                        crs = df.crs
+                    else:
+                        try:
+                            crs = int(crs)
+                        except ValueError:
+                            pass
+                        crs = pyproj.crs.CRS.from_user_input(crs)
+                    
                     srid = 4326 if crs is None else crs.to_epsg()
 
                     if extension == '.kml':
