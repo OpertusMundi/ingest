@@ -1,0 +1,16 @@
+name: TomTom road network
+description: TomTom road network
+type: vector
+attributes:
+  - name: FRC
+    type: integer
+  - name: NAME
+    type: string
+  - name: NAMELC
+    type: string
+  - name: NAMETYP
+    type: integer
+  - name: RTETYP
+    type: integer
+  - name: PARTSTRUC
+    type: integer

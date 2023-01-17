@@ -167,11 +167,13 @@ def _prepareSession():
     return session
 
 
-def enqueue(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=None, **kwargs):
+def enqueue(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=None,
+            match_into_wks=False, **kwargs):
     """Enqueue a transform job (in case requested response type is 'deferred')."""
     mainLogger.info("Processing ticket %s (%s)", ticket, src_file)
     try:
-        result = _ingest(src_file, ticket, tablename, schema, shard, csv_geom_column_name, replace=replace, **kwargs)
+        result = _ingest(src_file, ticket, tablename, schema, shard, csv_geom_column_name, replace=replace,
+                         match_into_wks=match_into_wks, **kwargs)
     except Exception as e:
         return (ticket, None, 0, str(e), None)
     rows = result.pop('length')
@@ -279,6 +281,230 @@ def healthCheck():
     except Exception as exc:
         return make_response({'status': 'FAILED', 'reason': 'cannot connect to GeoServer REST API.', 'detail': str(exc)}, 200)
     return make_response({'status': 'OK'}, 200)
+
+
+def post_ingest_endpoint(wks_flag=False):
+    form = IngestForm(**request.form)
+    if not form.validate():
+        return make_response({'errors': form.errors}, 400)
+
+    if form.shard and (form.shard not in geodata_shards):
+        return make_response({'errors': {'shard': 'bad identifier [{0}]'.format(form.shard)}}, 400)
+
+    # Form the source full path of the uploaded file
+    if request.values.get('resource') is not None:
+        src_file = path.join(environ['INPUT_DIR'], form.resource)
+    else:
+        try:
+            resource = request.files['resource']
+        except KeyError:
+            return make_response({'errors': {'resource': ['expected a file upload field']}}, 400)
+        if resource is None:
+            mainLogger.info('Client error: %s', 'resource not uploaded')
+            return make_response({'errors': {'resource': ['file was not uploaded']}}, 400)
+
+    session = _prepareSession()
+    g.session = session
+
+    replace = distutils.util.strtobool(form.replace) if not isinstance(form.replace, bool) else form.replace
+    read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
+
+    ticket = session['ticket']
+    mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
+
+    if request.values.get('resource') is None:
+        # Create tmp directory and store the uploaded file.
+        working_path = _getWorkingPath(ticket)
+        src_path = path.join(working_path, 'src')
+        _makeDir(src_path)
+        src_file = path.join(src_path, secure_filename(resource.filename))
+        resource.save(src_file)
+
+    table_name = form.table
+    schema = form.workspace
+    shard = form.shard
+    csv_geom_column_name = form.geom
+
+    if form.response == 'prompt':
+        g.response_type = 'prompt'
+        try:
+            result = _ingest(src_file, ticket, table_name, schema, shard, csv_geom_column_name,
+                             replace=replace, match_into_wks=wks_flag, **read_options)
+        except Exception as e:
+            return make_response({ 'error': str(e) }, 400)
+        return make_response({**result, "type": form.response}, 200)
+    else:
+        g.response_type = 'deferred'
+        future = executor.submit(enqueue, src_file, ticket, table_name, schema, shard, csv_geom_column_name,
+                                 replace=replace, match_into_wks=wks_flag, **read_options)
+        future.add_done_callback(_executorCallback)
+        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": form.response}, 202)
+
+
+@app.route("/ingest_wks", methods=["POST"])
+def ingest_wks():
+    """The ingest endpoint.
+        ---
+        post:
+          summary: Ingest a vector file (Shapefile/KML) into PostGIS.
+          tags:
+            - Ingest
+          parameters:
+            - in: header
+              name: X-Idempotency-Key
+              description: Associates the request with an Idempotency Key (it has to be unique).
+              schema:
+                type: string
+                format: uuid
+              required: false
+          requestBody:
+            required: true
+            content:
+              multipart/form-data:
+                schema:
+                  type: object
+                  properties:
+                    resource:
+                      type: string
+                      format: binary
+                      description: The vector file.
+                    response:
+                      type: string
+                      enum: [prompt, deferred]
+                      default: prompt
+                      description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+                    table:
+                      type: string
+                      description: The name of the (new) table into which the data will be ingested
+                    workspace:
+                      type: string
+                      description: The workspace determines the database schema
+                    shard:
+                      type: string
+                      description: The shard identifier (if any)
+                    replace:
+                      type: boolean
+                      description: If true and table already exists, data will replace existing data
+                      default: false
+                    encoding:
+                      type: string
+                      description: File encoding.
+                    crs:
+                      type: string
+                      description: CRS of the dataset.
+                    geom:
+                      type: string
+                      description: The column name that contains the geometric information (In the case of a csv file)
+                  required:
+                    - resource
+                    - table
+                    - workspace
+              application/x-www-form-urlencoded:
+                schema:
+                  type: object
+                  properties:
+                    resource:
+                      type: string
+                      description: The vector file resolvable path.
+                    response:
+                      type: string
+                      enum: [prompt, deferred]
+                      default: prompt
+                      description: Determines whether the proccess should be promptly initiated (*prompt*) or queued (*deferred*). In the first case, the response waits for the result, in the second the response is immediate returning a ticket corresponding to the request.
+                    table:
+                      type: string
+                      description: The name of the (new) table into which the data will be ingested
+                    workspace:
+                      type: string
+                      description: The workspace determines the database schema
+                    shard:
+                      type: string
+                      description: The shard identifier (if any)
+                    replace:
+                      type: boolean
+                      description: If true and table already exists, data will replace existing data
+                      default: false
+                    encoding:
+                      type: string
+                      description: File encoding.
+                    crs:
+                      type: string
+                      description: CRS of the dataset.
+                  required:
+                    - resource
+                    - table
+                    - workspace
+          responses:
+            200:
+              description: Ingestion completed.
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      schema:
+                        type: string
+                        description: The database schema of the created table.
+                        example: "work_1"
+                      table:
+                        type: string
+                        description: The name of the created table.
+                        example: "corfu_pois"
+                      length:
+                        type: integer
+                        description: The number of features stored in the table.
+                        example: 539
+                      type:
+                        type: string
+                        description: The response type as requested.
+                        example: "prompt"
+            202:
+              description: Accepted for processing, but ingestion has not been completed.
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      ticket:
+                        type: string
+                        description: The ticket corresponding to the request.
+                        example: "5d530de91ae5f265329efe38c97ac931"
+                      status:
+                        type: string
+                        description: The *status* endpoint to poll for the status of the request.
+                        example: "/status/5d530de91ae5f265329efe38c97ac931"
+                      type:
+                        type: string
+                        description: The response type as requested.
+                        example: "deferred"
+              links:
+                GetStatus:
+                  operationId: getStatus
+                  parameters:
+                    ticket: '$response.body#/ticket'
+                  description: The `ticket` value returned in the response can be used as the `ticket` parameter in `GET /status/{ticket}`.
+            400:
+              description: Encountered a validation error
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      error:
+                        type: string
+                        description: A error message for the entire request
+                      errors:
+                        type: object
+                        description: A map of validation errors keyed on a request parameter
+                        additionalProperties:
+                          type: array
+                          items:
+                            type: string
+                    example: { "errors": { "crs": [ "Field must be a valid CRS" ] } }
+            403:
+              description: Insufficient privilege for writing in the database schema.
+        """
+    return post_ingest_endpoint(wks_flag=True)
 
 
 @app.route("/ingest", methods=["POST"])
@@ -444,62 +670,8 @@ def ingest():
         403:
           description: Insufficient privilege for writing in the database schema.
     """
+    return post_ingest_endpoint()
 
-    form = IngestForm(**request.form)
-    if not form.validate():
-        return make_response({'errors': form.errors}, 400)
-
-    if form.shard and (form.shard not in geodata_shards):
-        return make_response({'errors': {'shard': 'bad identifier [{0}]'.format(form.shard)}}, 400)
-
-    # Form the source full path of the uploaded file
-    if request.values.get('resource') is not None:
-        src_file = path.join(environ['INPUT_DIR'], form.resource)
-    else:
-        try:
-            resource = request.files['resource']
-        except KeyError:
-            return make_response({'errors': {'resource': ['expected a file upload field']}}, 400)
-        if resource is None:
-            mainLogger.info('Client error: %s', 'resource not uploaded')
-            return make_response({'errors': {'resource': ['file was not uploaded']}}, 400)
-
-    session = _prepareSession()
-    g.session = session
-
-    replace = distutils.util.strtobool(form.replace) if not isinstance(form.replace, bool) else form.replace
-    read_options = {opt: getattr(form, opt) for opt in ['encoding', 'crs'] if getattr(form, opt) is not None}
-
-    ticket = session['ticket']
-    mainLogger.info("Starting {} request with ticket {}.".format(form.response, ticket))
-
-    if request.values.get('resource') is None:
-        # Create tmp directory and store the uploaded file.
-        working_path = _getWorkingPath(ticket)
-        src_path = path.join(working_path, 'src')
-        _makeDir(src_path)
-        src_file = path.join(src_path, secure_filename(resource.filename))
-        resource.save(src_file)
-
-    table_name = form.table
-    schema = form.workspace
-    shard = form.shard
-    csv_geom_column_name = form.geom
-
-    if form.response == 'prompt':
-        g.response_type = 'prompt'
-        try:
-            result = _ingest(src_file, ticket, table_name, schema, shard, csv_geom_column_name,
-                             replace=replace, **read_options)
-        except Exception as e:
-            return make_response({ 'error': str(e) }, 400)
-        return make_response({**result, "type": form.response}, 200)
-    else:
-        g.response_type = 'deferred'
-        future = executor.submit(enqueue, src_file, ticket, table_name, schema, shard, csv_geom_column_name,
-                                 replace=replace, **read_options)
-        future.add_done_callback(_executorCallback)
-        return make_response({"ticket": ticket, "status": "/status/{}".format(ticket), "type": form.response}, 202)
 
 @app.route("/publish", methods=["POST"])
 def publish():
@@ -879,7 +1051,8 @@ with app.test_request_context():
     spec.path(view=unpublish)
 
 
-def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=False, **kwargs):
+def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_name=None, replace=False,
+            match_into_wks=False, **kwargs):
     """Ingest file content to PostgreSQL and publish to geoserver.
 
     Parameters:
@@ -890,6 +1063,7 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_nam
         shard (str): shard indentifier, or None if no sharding is used
         csv_geom_column_name (str): The geometric column name in the case of a csv file
         replace (bool, optional): if True, the table will be replaced if it exists.
+        match_into_wks (bool, optional): If True, the table will be attempted to be matched into a well known schema
         **kwargs: additional arguments for GeoPandas read file.
 
     Returns:
@@ -912,7 +1086,8 @@ def _ingest(src_file, ticket, tablename, schema, shard=None, csv_geom_column_nam
         src_file = src_path
     
     try:
-        result = postgis.ingest(src_file, tablename, schema, shard, csv_geom_column_name, replace=replace, **kwargs)
+        result = postgis.ingest(src_file, tablename, schema, shard, csv_geom_column_name, replace=replace,
+                                match_into_wks=match_into_wks**kwargs)
     except Exception as e:
         mainLogger.error("Failed to ingest %s into PostGIS table \"%s\".\"%s\" on shard [%s]: %s",
                          src_file, schema, tablename, shard or '', str(e))

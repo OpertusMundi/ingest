@@ -7,8 +7,12 @@ from shapely import wkt
 from geoalchemy2 import Geometry, WKTElement
 import sqlalchemy
 import shapely
-from os import path, environ
+from os import path, environ, listdir
 import warnings
+
+from valentine.algorithms import Coma
+from yaml import safe_load
+from valentine import valentine_match
 
 from .logging import mainLogger
 logger = mainLogger.getChild('postgres')
@@ -166,7 +170,7 @@ class Postgres(object):
         return 'wkt'
 
     def ingest(self, input_path, table, schema, shard=None, csv_geom_column_name=None,
-               chunksize=5000, commit=True, replace=False, **kwargs):
+               chunksize=5000, commit=True, replace=False, match_into_wks=False, **kwargs):
         """Creates a DB table and ingests a vector file into it.
 
         It reads a vector file with geopandas (fiona) and writes the attributes into a database table.
@@ -182,6 +186,7 @@ class Postgres(object):
             chunksize (int): Number of records that will be read from the file in each turn.
             commit (bool, optional): If False, the database changes will roll back.
             replace (bool, optional): If True, the table will be replace if it exists.
+            match_into_wks (bool, optional): If True, the table will be attempted to be matched into a well known schema
             **kwargs: Additional arguments for GeoPandas read file.
 
         Returns:
@@ -249,6 +254,8 @@ class Postgres(object):
                         if_exists = 'append'
                     df.drop('geometry', 1, inplace=True)
                     try:
+                        if match_into_wks:
+                            df = match_wks(df)
                         df.to_sql(table, con=con, schema=schema, if_exists=if_exists, index=False,
                                   dtype={'geom': Geometry(gtype, srid=srid)})
                     except ValueError as e:
@@ -285,3 +292,26 @@ class Postgres(object):
             trans.close()
 
         return (schema, table, rows)
+
+
+def match_wks(df2):
+    max_matches = 0
+    max_matches_column_names = tuple()
+    for f in listdir('/home/kyriakos/PycharmProjects/profile/geoprofile/schemata'):
+        p = path.join('/home/kyriakos/PycharmProjects/profile/geoprofile/schemata', f)
+        if path.isfile(p):
+            with open(p, 'r') as schema_file:
+                column_names = list(pd.json_normalize(safe_load(schema_file)['attributes'])['name'])
+                df = pd.DataFrame(columns=column_names)
+                matcher = Coma()
+                matches = {match: sim for match, sim in valentine_match(df, df2, matcher).items()}
+                cleaned_matches = {match[0][1]: match[1][1] for match in matches.keys()}
+                if max_matches < len(cleaned_matches):
+                    max_matches = len(cleaned_matches)
+                    max_matches_column_names = (column_names, cleaned_matches)
+
+    column_names, cleaned_matches = max_matches_column_names
+    df = pd.DataFrame(columns=column_names)
+    for df1_col, df2_col in cleaned_matches.items():
+        df[df1_col] = df2[df2_col]
+    return df

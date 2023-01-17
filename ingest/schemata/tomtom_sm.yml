@@ -1,0 +1,26 @@
+name: TomTom settlements
+description: TomTom settlements
+type: vector
+attributes:
+  - name: ID
+    type: integer
+  - name: FEATTYP
+    type: integer
+  - name: ARNAMELC
+    type: string
+  - name: NAME
+    type: string
+  - name: ADMINCLASS
+    type: integer
+  - name: DISPCLASS
+    type: integer
+  - name: CITYTYP
+    type: integer
+  - name: EXTPOIID
+    type: string
+  - name: POSACCUR
+    type: integer
+  - name: GAL
+    type: integer
+  - name: CLTRPELID
+    type: integer

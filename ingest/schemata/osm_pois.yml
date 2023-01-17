@@ -1,0 +1,54 @@
+name: OSM POIs
+description: OSM POIs in Europe
+type: vector
+attributes:
+  - name: ID
+    type: string
+  - name: NAME
+    type: string
+  - name: CATEGORY
+    type: string
+  - name: SUBCATEGORY
+    type: string
+  - name: LON
+    type: float
+  - name: LAT
+    type: float
+  - name: SRID
+    type: integer
+  - name: INTERNATIONAL_NAME
+    type: string
+  - name: STREET
+    type: string
+  - name: WIKIPEDIA
+    type: string
+  - name: PHONE
+    type: string
+  - name: CITY
+    type: string
+  - name: EMAIL
+    type: string
+  - name: ALTERNATIVE_NAME
+    type: string
+  - name: OPENING_HOURS
+    type: string
+  - name: DESCRIPTION
+    type: string
+  - name: WEBSITE
+    type: string
+  - name: LAST_UPDATE
+    type: string
+  - name: OPERATOR
+    type: string
+  - name: POSTCODE
+    type: string
+  - name: COUNTRY
+    type: string
+  - name: FAX
+    type: string
+  - name: IMAGE
+    type: string
+  - name: HOUSENUMBER
+    type: string
+  - name: OTHER_TAGS
+    type: string

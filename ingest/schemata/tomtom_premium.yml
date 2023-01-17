@@ -1,0 +1,50 @@
+name: TomTom Premium
+description: TomTom Premium POIs
+type: vector
+attributes:
+  - name: ID
+    type: integer
+  - name: FEATTYP
+    type: integer
+  - name: PACKAGE
+    type: integer
+  - name: SUBCAT
+    type: integer
+  - name: IMPORT
+    type: integer
+  - name: NAME
+    type: string
+  - name: STNAME
+    type: string
+  - name: HSNUM
+    type: string
+  - name: POSTCODE
+    type: string
+  - name: LOCNAME
+    type: string
+  - name: LANCD
+    type: string
+  - name: TELNUM
+    type: string
+  - name: TEL_TYPE
+    type: integer
+  - name: FAXNUM
+    type: string
+  - name: EMAIL
+    type: string
+  - name: HTTP
+    type: string
+  - name: BRANDNAME
+    type: string
+  - name: CLTRPELID
+    type: integer
+  - name: RELPOS
+    type: float
+  - name: EXTPOIID
+    type: string
+  - name: ADDRPID
+    type: integer
+  - name: POSACCUR
+    type: integer
+  - name: GAL
+    type: integer

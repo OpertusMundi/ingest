@@ -1,0 +1,56 @@
+name: Herold Yellow Page Data
+description: Yellow page data for Austria
+type: vector
+attributes:
+  - name: OBJECTID
+    type: integer
+  - name: SID
+    type: integer
+  - name: FIRMA
+    type: string
+  - name: BR
+    type: string
+  - name: STRASSE
+    type: string
+  - name: HNR
+    type: string
+  - name: PLZ
+    type: integer
+  - name: ORT
+    type: string
+  - name: BL
+    type: string
+  - name: TELEFON
+    type: string
+  - name: TELEFAX
+    type: string
+  - name: EMAIL
+    type: string
+  - name: HTTP
+    type: string
+  - name: KID
+    type: integer
+  - name: UMS_EUR
+    type: float
+  - name: KAP_EUR
+    type: float
+  - name: FUHRPARK
+    type: integer
+  - name: MA
+    type: integer
+  - name: BR_ID
+    type: string
+  - name: HIC_ID
+    type: integer
+  - name: HIC
+    type: string
+  - name: OENACE
+    type: string
+  - name: OENACE_ERW
+    type: string
+  - name: OENACE_BEZ
+    type: string
+  - name: Genauigkei
+    type: string
+  - name: ZAEHLSP_ID
+    type: float
