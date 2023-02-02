@@ -1,0 +1,22 @@
+name: NUTS
+description: Nomenclature of territorial units for statistics
+type: vector
+attributes:
+  - name: NUTS_ID
+    type: string
+  - name: LEVL_CODE
+    type: integer
+  - name: CNTR_CODE
+    type: string
+  - name: NAME_LATN
+    type: string
+  - name: NUTS_NAME
+    type: string
+  - name: MOUNT_TYPE
+    type: integer
+  - name: URBN_TYPE
+    type: integer
+  - name: COAST_TYPE
+    type: integer
+  - name: FID
+    type: string
